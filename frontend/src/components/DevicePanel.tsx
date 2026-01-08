@@ -9,34 +9,17 @@ import {
   History,
   ListChecks,
   Square,
-  Zap,
-  Target,
-  Rocket,
 } from 'lucide-react';
 import { throttle } from 'lodash';
 import { DeviceMonitor } from './DeviceMonitor';
-import { DualModelPanel } from './DualModelPanel';
-import { useDualModelState } from './useDualModelState';
 import type {
   ThinkingChunkEvent,
   StepEvent,
   DoneEvent,
   ErrorEvent,
   Workflow,
-  DualModelStreamEvent,
 } from '../api';
-import {
-  abortChat,
-  initAgent,
-  resetChat,
-  sendMessageStream,
-  listWorkflows,
-  initDualModel,
-  sendDualModelStream,
-  abortDualModelChat,
-  getErrorMessage,
-  resetDualModel,
-} from '../api';
+import { abortChat, resetChat, sendMessageStream, listWorkflows } from '../api';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
@@ -76,30 +59,12 @@ interface Message {
   currentThinking?: string; // Current thinking text being streamed
 }
 
-interface GlobalConfig {
-  base_url: string;
-  model_name: string;
-  api_key?: string;
-  thinking_mode?: string;
-  dual_model_enabled?: boolean;
-  decision_base_url?: string;
-  decision_model_name?: string;
-  decision_api_key?: string;
-  agent_type?: string;
-  agent_config_params?: Record<string, unknown>;
-}
-
 interface DevicePanelProps {
   deviceId: string; // Used for API calls
   deviceSerial: string; // Used for history storage
   deviceName: string;
   deviceConnectionType?: string; // Device connection type (usb/wifi/remote)
-  config: GlobalConfig | null;
-  isVisible: boolean;
   isConfigured: boolean;
-  thinkingMode?: 'fast' | 'deep' | 'turbo'; // Per-device thinking mode
-  onThinkingModeChange?: (mode: 'fast' | 'deep' | 'turbo') => void; // Callback to update thinking mode
-  dualModelEnabled?: boolean; // Controlled by parent component
 }
 
 export function DevicePanel({
@@ -107,11 +72,7 @@ export function DevicePanel({
   deviceSerial,
   deviceName,
   deviceConnectionType,
-  config,
   isConfigured,
-  thinkingMode = 'deep',
-  onThinkingModeChange,
-  dualModelEnabled = false,
 }: DevicePanelProps) {
   const t = useTranslation();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -119,24 +80,18 @@ export function DevicePanel({
   const [loading, setLoading] = useState(false);
   const [aborting, setAborting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [initialized, setInitialized] = useState(false);
+  // ✅ 移除 initialized 状态，依赖后端自动初始化
+  // const [initialized, setInitialized] = useState(false);
   const [showHistoryPopover, setShowHistoryPopover] = useState(false);
   const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [showWorkflowPopover, setShowWorkflowPopover] = useState(false);
-  const [dualModelInitialized, setDualModelInitialized] = useState(false);
-  const {
-    state: dualModelState,
-    handleEvent: handleDualModelEvent,
-    reset: resetDualModelState,
-  } = useDualModelState();
 
   const chatStreamRef = useRef<{ close: () => void } | null>(null);
-  const dualModelStreamRef = useRef<{ close: () => void } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
-  const hasAutoInited = useRef(false);
-  const prevConfigRef = useRef<GlobalConfig | null>(null);
+  // ✅ 移除 hasAutoInited，不再需要自动初始化逻辑
+  // const hasAutoInited = useRef(false);
   const prevMessageCountRef = useRef(0);
   const prevMessageSigRef = useRef<string | null>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
@@ -171,107 +126,10 @@ export function DevicePanel({
     };
   }, []);
 
-  const handleInit = useCallback(
-    async (force: boolean = false) => {
-      if (!config) return;
+  // ✅ 移除 handleInit 函数，不再需要显式初始化
+  // Agent 会在首次发送消息时自动初始化
 
-      try {
-        await initAgent({
-          model_config: {
-            base_url: config.base_url || undefined,
-            api_key: config.api_key || undefined,
-            model_name: config.model_name || undefined,
-          },
-          agent_config: {
-            device_id: deviceId,
-          },
-          agent_type: config.agent_type,
-          agent_config_params: config.agent_config_params,
-          force,
-        });
-        setInitialized(true);
-        setError(null);
-      } catch (err) {
-        const errorMessage = getErrorMessage(err);
-        setError(errorMessage);
-        // 如果是强制重新初始化失败，后端已回滚删除了原有 agent，
-        // 需要将 initialized 设为 false 保持状态一致
-        if (force) {
-          setInitialized(false);
-        }
-      }
-    },
-    [deviceId, config]
-  );
-
-  // Initialize dual model
-  const handleInitDualModel = useCallback(async () => {
-    if (!config) return;
-
-    try {
-      await initDualModel({
-        device_id: deviceId,
-        decision_base_url: config.decision_base_url || '',
-        decision_api_key: config.decision_api_key || '',
-        decision_model_name: config.decision_model_name || '',
-        vision_base_url: config.base_url,
-        vision_api_key: config.api_key,
-        vision_model_name: config.model_name,
-        thinking_mode: thinkingMode,
-      });
-      setDualModelInitialized(true);
-      setError(null);
-    } catch (err) {
-      const errorMessage = getErrorMessage(err);
-      setError(errorMessage);
-    }
-  }, [deviceId, config, thinkingMode]);
-
-  // Auto-initialize dual model when enabled from parent
-  useEffect(() => {
-    // Only auto-initialize if:
-    // 1. Dual model is enabled
-    // 2. Single-model Agent is already initialized (required for dual model)
-    // 3. Decision model configuration is provided
-    // 4. Vision model base_url is configured
-    if (
-      dualModelEnabled &&
-      !dualModelInitialized &&
-      initialized &&
-      config?.decision_base_url &&
-      config?.base_url
-    ) {
-      handleInitDualModel();
-    }
-  }, [
-    dualModelEnabled,
-    dualModelInitialized,
-    initialized,
-    config,
-    handleInitDualModel,
-  ]);
-
-  // Reinitialize dual model when thinking mode changes (while dual model is enabled)
-  useEffect(() => {
-    // Only reinitialize if dual model is enabled and already initialized,
-    // and required configuration is present
-    if (
-      dualModelEnabled &&
-      dualModelInitialized &&
-      config?.decision_base_url &&
-      config?.base_url
-    ) {
-      handleInitDualModel();
-    }
-  }, [thinkingMode, dualModelEnabled, dualModelInitialized, config]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Auto-initialize on mount if configured
-  useEffect(() => {
-    if (isConfigured && config && !initialized && !hasAutoInited.current) {
-      hasAutoInited.current = true;
-      handleInit();
-    }
-  }, [isConfigured, config, initialized, handleInit]);
+  // ✅ 移除自动初始化 useEffect，不再需要
 
   // Load history items when popover opens
   useEffect(() => {
@@ -332,38 +190,15 @@ export function DevicePanel({
     setHistoryItems(prev => prev.filter(item => item.id !== itemId));
   };
 
-  // Re-initialize when config changes (for already initialized devices)
-  useEffect(() => {
-    // Skip if not initialized yet or no config
-    if (!initialized || !config) return;
-
-    // Check if config actually changed
-    const prevConfig = prevConfigRef.current;
-    if (
-      prevConfig &&
-      (prevConfig.base_url !== config.base_url ||
-        prevConfig.model_name !== config.model_name ||
-        prevConfig.api_key !== config.api_key ||
-        prevConfig.agent_type !== config.agent_type)
-    ) {
-      // Config changed, force re-initialize to apply new settings
-      console.log(
-        `[DevicePanel] Config changed for device ${deviceId}, force re-initializing...`
-      );
-      handleInit(true);
-    }
-
-    // Update previous config
-    prevConfigRef.current = config;
-  }, [config, initialized, deviceId, handleInit]);
+  // Note: Configuration is now managed entirely by backend ConfigManager.
+  // If user updates config via Settings, they need to manually re-initialize agents.
 
   const handleSend = useCallback(async () => {
     const inputValue = input.trim();
     if (!inputValue || loading) return;
 
-    if (!initialized) {
-      await handleInit();
-    }
+    // ✅ 移除初始化检查，后端会自动初始化
+    // Agent 会在首次使用时自动创建
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -563,155 +398,16 @@ export function DevicePanel({
   }, [
     input,
     loading,
-    initialized,
+    // initialized, // ✅ 移除依赖
     deviceId,
     deviceSerial,
     deviceName,
-    handleInit,
+    // handleInit, // ✅ 移除依赖
   ]);
-
-  // Dual model send function
-  const handleSendDualModel = useCallback(async () => {
-    const inputValue = input.trim();
-    if (!inputValue || loading) return;
-
-    if (!dualModelInitialized) {
-      await handleInitDualModel();
-    }
-
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      role: 'user',
-      content: inputValue,
-      timestamp: new Date(),
-    };
-
-    setMessages(prev => [...prev, userMessage]);
-    setInput('');
-    setLoading(true);
-    setError(null);
-    resetDualModelState();
-
-    const agentMessageId = (Date.now() + 1).toString();
-    const agentMessage: Message = {
-      id: agentMessageId,
-      role: 'assistant',
-      content: '',
-      timestamp: new Date(),
-      thinking: [],
-      actions: [],
-      isStreaming: true,
-    };
-
-    setMessages(prev => [...prev, agentMessage]);
-
-    const stream = sendDualModelStream(
-      userMessage.content,
-      deviceId,
-      (event: DualModelStreamEvent) => {
-        handleDualModelEvent(event);
-
-        if (event.type === 'task_complete') {
-          const completeEvent = event as {
-            type: 'task_complete';
-            success: boolean;
-            message: string;
-            steps: number;
-          };
-          setMessages(prev =>
-            prev.map(msg =>
-              msg.id === agentMessageId
-                ? {
-                    ...msg,
-                    content: completeEvent.message,
-                    success: completeEvent.success,
-                    steps: completeEvent.steps,
-                    isStreaming: false,
-                  }
-                : msg
-            )
-          );
-          setLoading(false);
-          dualModelStreamRef.current = null;
-        } else if (event.type === 'error') {
-          const errorEvent = event as { type: 'error'; message: string };
-          setMessages(prev =>
-            prev.map(msg =>
-              msg.id === agentMessageId
-                ? {
-                    ...msg,
-                    content: `Error: ${errorEvent.message}`,
-                    success: false,
-                    isStreaming: false,
-                  }
-                : msg
-            )
-          );
-          setLoading(false);
-          setError(errorEvent.message);
-          dualModelStreamRef.current = null;
-        } else if (event.type === 'aborted') {
-          setMessages(prev =>
-            prev.map(msg =>
-              msg.id === agentMessageId
-                ? {
-                    ...msg,
-                    content: 'Task aborted',
-                    success: false,
-                    isStreaming: false,
-                  }
-                : msg
-            )
-          );
-          setLoading(false);
-          dualModelStreamRef.current = null;
-        }
-      },
-      (error: Error) => {
-        setMessages(prev =>
-          prev.map(msg =>
-            msg.id === agentMessageId
-              ? {
-                  ...msg,
-                  content: `Error: ${error.message}`,
-                  success: false,
-                  isStreaming: false,
-                }
-              : msg
-          )
-        );
-        setLoading(false);
-        setError(error.message);
-        dualModelStreamRef.current = null;
-      }
-    );
-
-    dualModelStreamRef.current = stream;
-  }, [
-    input,
-    loading,
-    dualModelInitialized,
-    deviceId,
-    handleInitDualModel,
-    handleDualModelEvent,
-    resetDualModelState,
-  ]);
-
-  // Unified send function
-  const handleSendMessage = useCallback(async () => {
-    if (dualModelEnabled) {
-      await handleSendDualModel();
-    } else {
-      await handleSend();
-    }
-  }, [dualModelEnabled, handleSendDualModel, handleSend]);
 
   const handleReset = useCallback(async () => {
     if (chatStreamRef.current) {
       chatStreamRef.current.close();
-    }
-    if (dualModelStreamRef.current) {
-      dualModelStreamRef.current.close();
     }
 
     setMessages([]);
@@ -720,20 +416,14 @@ export function DevicePanel({
     setShowNewMessageNotice(false);
     setIsAtBottom(true);
     chatStreamRef.current = null;
-    dualModelStreamRef.current = null;
     prevMessageCountRef.current = 0;
     prevMessageSigRef.current = null;
-    resetDualModelState();
 
-    if (dualModelEnabled) {
-      await resetDualModel(deviceId);
-    } else {
-      await resetChat(deviceId);
-    }
-  }, [deviceId, dualModelEnabled, resetDualModelState]);
+    await resetChat(deviceId);
+  }, [deviceId]);
 
   const handleAbortChat = useCallback(async () => {
-    if (!chatStreamRef.current && !dualModelStreamRef.current) return;
+    if (!chatStreamRef.current) return;
 
     setAborting(true);
 
@@ -742,10 +432,6 @@ export function DevicePanel({
       if (chatStreamRef.current) {
         chatStreamRef.current.close();
         chatStreamRef.current = null;
-      }
-      if (dualModelStreamRef.current) {
-        dualModelStreamRef.current.close();
-        dualModelStreamRef.current = null;
       }
 
       // Immediately update UI - set isStreaming to false and update message content
@@ -772,22 +458,14 @@ export function DevicePanel({
       });
 
       // Notify backend to abort (don't wait for response)
-      if (dualModelEnabled) {
-        abortDualModelChat(deviceId).catch(e =>
-          console.error('Backend abort failed:', e)
-        );
-      } else {
-        abortChat(deviceId).catch(e =>
-          console.error('Backend abort failed:', e)
-        );
-      }
+      abortChat(deviceId).catch(e => console.error('Backend abort failed:', e));
     } catch (error) {
       console.error('Failed to abort chat:', error);
     } finally {
       setLoading(false);
       setAborting(false);
     }
-  }, [deviceId, dualModelEnabled, t]);
+  }, [deviceId, t]);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -837,9 +515,6 @@ export function DevicePanel({
       if (chatStreamRef.current) {
         chatStreamRef.current.close();
       }
-      if (dualModelStreamRef.current) {
-        dualModelStreamRef.current.close();
-      }
     };
   }, [deviceId]);
 
@@ -878,7 +553,7 @@ export function DevicePanel({
   ) => {
     if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
       event.preventDefault();
-      handleSendMessage();
+      handleSend();
     }
   };
 
@@ -967,121 +642,11 @@ export function DevicePanel({
               </PopoverContent>
             </Popover>
 
-            {!isConfigured ? (
+            {!isConfigured && (
               <Badge variant="warning">
                 <AlertCircle className="w-3 h-3 mr-1" />
                 {t.devicePanel.noConfig}
               </Badge>
-            ) : !initialized ? (
-              <Button
-                onClick={() => handleInit()}
-                disabled={!isConfigured || !config}
-                size="sm"
-                variant="twitter"
-              >
-                {t.devicePanel.initializing}
-              </Button>
-            ) : (
-              <Badge variant="success">
-                <CheckCircle2 className="w-3 h-3 mr-1" />
-                {t.devicePanel.ready}
-              </Badge>
-            )}
-
-            {/* Thinking Mode Toggle - visible when dual model is enabled */}
-            {dualModelEnabled && onThinkingModeChange && (
-              <>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant={thinkingMode === 'fast' ? 'default' : 'ghost'}
-                      size="icon"
-                      onClick={() => onThinkingModeChange('fast')}
-                      className={`h-8 w-8 rounded-full ${
-                        thinkingMode === 'fast'
-                          ? 'bg-green-500 hover:bg-green-600 text-white'
-                          : 'text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300'
-                      }`}
-                    >
-                      <Zap className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent
-                    side="bottom"
-                    sideOffset={8}
-                    className="max-w-xs"
-                  >
-                    <div className="space-y-1">
-                      <p className="font-medium">
-                        {t.devicePanel.tooltips.fastMode}
-                      </p>
-                      <p className="text-xs opacity-80">
-                        {t.devicePanel.tooltips.fastModeDesc}
-                      </p>
-                    </div>
-                  </TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant={thinkingMode === 'deep' ? 'default' : 'ghost'}
-                      size="icon"
-                      onClick={() => onThinkingModeChange('deep')}
-                      className={`h-8 w-8 rounded-full ${
-                        thinkingMode === 'deep'
-                          ? 'bg-blue-500 hover:bg-blue-600 text-white'
-                          : 'text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300'
-                      }`}
-                    >
-                      <Target className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent
-                    side="bottom"
-                    sideOffset={8}
-                    className="max-w-xs"
-                  >
-                    <div className="space-y-1">
-                      <p className="font-medium">
-                        {t.devicePanel.tooltips.deepMode}
-                      </p>
-                      <p className="text-xs opacity-80">
-                        {t.devicePanel.tooltips.deepModeDesc}
-                      </p>
-                    </div>
-                  </TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant={thinkingMode === 'turbo' ? 'default' : 'ghost'}
-                      size="icon"
-                      onClick={() => onThinkingModeChange('turbo')}
-                      className={`h-8 w-8 rounded-full ${
-                        thinkingMode === 'turbo'
-                          ? 'bg-orange-500 hover:bg-orange-600 text-white'
-                          : 'text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300'
-                      }`}
-                    >
-                      <Rocket className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent
-                    side="bottom"
-                    sideOffset={8}
-                    className="max-w-xs"
-                  >
-                    <div className="space-y-1">
-                      <p className="font-medium">
-                        {t.devicePanel.tooltips.turboMode}
-                      </p>
-                      <p className="text-xs opacity-80">
-                        {t.devicePanel.tooltips.turboModeDesc}
-                      </p>
-                    </div>
-                  </TooltipContent>
-                </Tooltip>
-              </>
             )}
 
             <Button
@@ -1095,19 +660,6 @@ export function DevicePanel({
             </Button>
           </div>
         </div>
-
-        {/* Dual Model Panel */}
-        {dualModelEnabled && (
-          <div className="border-b border-slate-200 dark:border-slate-800 p-4">
-            <DualModelPanel
-              state={dualModelState}
-              isStreaming={loading}
-              className=""
-              decisionModelName={config?.decision_model_name || ''}
-              visionModelName={config?.model_name || 'autoglm-phone'}
-            />
-          </div>
-        )}
 
         {/* Error message */}
         {error && (
@@ -1274,9 +826,7 @@ export function DevicePanel({
               placeholder={
                 !isConfigured
                   ? t.devicePanel.configureFirst
-                  : !initialized
-                    ? t.devicePanel.initDeviceFirst
-                    : t.devicePanel.whatToDo
+                  : t.devicePanel.whatToDo
               }
               disabled={loading}
               className="flex-1 min-h-[40px] max-h-[120px] resize-none"
@@ -1372,7 +922,7 @@ export function DevicePanel({
             {/* Send Button */}
             {!loading && (
               <Button
-                onClick={handleSendMessage}
+                onClick={handleSend}
                 disabled={!input.trim()}
                 size="icon"
                 variant="twitter"

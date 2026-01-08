@@ -6,7 +6,7 @@
 
 AutoGLM 手机助手的现代化 Web 图形界面 - 让 AI 自动化操作 Android 设备变得简单
 
-**🎉 双模型协作架构现已上线！决策大模型 + 视觉小模型，智能任务规划与精准执行分离，性能提升 60%！🎉**
+**🆕 分层代理模式**：基于决策模型和视觉模型的双层协作架构，支持复杂任务规划与精准执行分离，适合需要多轮推理的高级任务。
 
 ![Python](https://img.shields.io/badge/python-3.10+-blue.svg)
 ![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)
@@ -22,7 +22,7 @@ AutoGLM 手机助手的现代化 Web 图形界面 - 让 AI 自动化操作 Andro
 
 ## ✨ 特性
 
-- **🧠 双模型协作** - 🆕 决策大模型 + 视觉小模型协作架构，智能任务规划与精准执行分离，支持三种工作模式（DEEP/FAST/TURBO）
+- **分层代理模式** - 🆕 决策模型 + 视觉模型双层协作架构，支持复杂任务规划与精准执行分离
 - **完全无线配对** - 🆕 支持 Android 11+ 二维码扫码配对，无需数据线即可连接设备
 - **多设备并发控制** - 同时管理和控制多个 Android 设备，设备间状态完全隔离
 - **对话式任务管理** - 通过聊天界面控制 Android 设备
@@ -42,9 +42,9 @@ AutoGLM 手机助手的现代化 Web 图形界面 - 让 AI 自动化操作 Andro
 
 | 操作系统 | 下载链接 | 说明 |
 |---------|---------|------|
-| 🪟 **Windows** (x64) | [📦 下载便携版 EXE](https://github.com/suyiiyii/AutoGLM-GUI/releases/download/v1.4.1/AutoGLM.GUI.1.4.1.exe) | 适用于 Windows 10/11，免安装 |
-| 🍎 **macOS** (Apple Silicon) | [📦 下载 DMG](https://github.com/suyiiyii/AutoGLM-GUI/releases/download/v1.4.1/AutoGLM.GUI-1.4.1-arm64.dmg) | 适用于 M 芯片 Mac |
-| 🐧 **Linux** (x64) | [📦 下载 AppImage](https://github.com/suyiiyii/AutoGLM-GUI/releases/download/v1.4.1/AutoGLM.GUI-1.4.1.AppImage) \| [deb](https://github.com/suyiiyii/AutoGLM-GUI/releases/download/v1.4.1/autoglm-gui_1.4.1_amd64.deb) \| [tar.gz](https://github.com/suyiiyii/AutoGLM-GUI/releases/download/v1.4.1/autoglm-gui-1.4.1.tar.gz) | 通用格式，支持主流发行版 |
+| 🪟 **Windows** (x64) | [📦 下载便携版 EXE](https://github.com/suyiiyii/AutoGLM-GUI/releases/download/v1.5.0/AutoGLM.GUI.1.5.0.exe) | 适用于 Windows 10/11，免安装 |
+| 🍎 **macOS** (Apple Silicon) | [📦 下载 DMG](https://github.com/suyiiyii/AutoGLM-GUI/releases/download/v1.5.0/AutoGLM.GUI-1.5.0-arm64.dmg) | 适用于 M 芯片 Mac |
+| 🐧 **Linux** (x64) | [📦 下载 AppImage](https://github.com/suyiiyii/AutoGLM-GUI/releases/download/v1.5.0/AutoGLM.GUI-1.5.0.AppImage) \| [deb](https://github.com/suyiiyii/AutoGLM-GUI/releases/download/v1.5.0/autoglm-gui_1.5.0_amd64.deb) \| [tar.gz](https://github.com/suyiiyii/AutoGLM-GUI/releases/download/v1.5.0/autoglm-gui-1.5.0.tar.gz) | 通用格式，支持主流发行版 |
 
 </div>
 
@@ -72,19 +72,7 @@ uvx autoglm-gui
 
 ## 📸 界面预览
 
-快速跳转： [普通模式](#mode-classic) · [双模型协作（增强）](#mode-dual) · [分层代理（增强）](#mode-layered)
-
-### 双模型协作架构
-
-**决策大模型（如 GLM-4.7）+ 视觉小模型（AutoGLM-Phone）**：大模型负责规划与纠错，小模型负责观察与执行，适合更复杂、更长流程的任务。
-
-- 🧠 **决策层**：任务理解 / 步骤规划 / 异常纠错
-- 👁️ **执行层**：识别界面元素并点击/滑动/输入完成操作
-- 🔄 **运行方式**：规划 → 执行 → 反馈；必要时自动重规划
-
-**模式选择（Thinking Mode）**：TURBO（更省更快，推荐常规流程）/ DEEP（更稳，适合复杂任务）/ FAST（更快，适合轻量任务）。
-
-<img width="879" height="849" alt="双模型协作界面" src="https://github.com/user-attachments/assets/15e5cf51-5a19-403d-9af3-46f77c2068f5" />
+快速跳转： [普通模式](#mode-classic) · [分层代理（增强）](#mode-layered)
 
 ### 分层代理
 
@@ -104,7 +92,81 @@ uvx autoglm-gui
 
 ## 🚀 快速开始
 
-## 🎯 模型服务配置
+### 前置要求
+
+- Android 设备（Android 11+ 支持完全无线配对，无需数据线）
+- 一个 OpenAI 兼容的 API 端点（支持智谱 BigModel、ModelScope 或自建服务）
+
+**关于设备连接**：
+- **Android 11+**：支持二维码扫码配对，完全无需数据线即可连接和控制设备
+- **Android 10 及更低版本**：需要先通过 USB 数据线连接并开启无线调试，之后可拔掉数据线无线使用
+
+### 方式一：Python 包安装（推荐）
+
+**无需手动准备环境，直接安装运行：**
+
+```bash
+# 通过 pip 安装并启动
+pip install autoglm-gui
+autoglm-gui --base-url http://localhost:8080/v1
+```
+
+也可以使用 uvx 免安装启动，自动启动最新版（需已安装 uv，[安装教程](https://docs.astral.sh/uv/getting-started/installation/)）：
+
+```bash
+uvx autoglm-gui --base-url http://localhost:8080/v1
+```
+
+### 方式二：Docker 部署
+
+AutoGLM-GUI 提供预构建的 Docker 镜像，支持 `linux/amd64` 和 `linux/arm64` 架构，适合服务器端远程控制 Android 设备的场景。
+
+**使用 docker-compose（推荐）：**
+
+```bash
+# 1. 下载 docker-compose.yml
+curl -O https://raw.githubusercontent.com/suyiiyii/AutoGLM-GUI/main/docker-compose.yml
+
+# 2. 启动服务
+docker-compose up -d
+
+# 3. 访问 http://localhost:8000，在 Web 界面中配置模型 API
+```
+
+**或直接使用 docker run：**
+
+```bash
+# 使用 host 网络模式运行（推荐）
+docker run -d --network host \
+  -v autoglm_config:/root/.config/autoglm \
+  -v autoglm_logs:/app/logs \
+  ghcr.io/suyiiyii/autoglm-gui:main
+
+# 访问 http://localhost:8000，在 Web 界面中配置模型 API
+```
+
+**配置说明**：
+- 默认使用 host 网络模式（推荐，便于 ADB 设备发现和二维码配对）
+- 模型 API 配置可以在 Web 界面的设置页面中完成，无需提前配置环境变量
+- 如果需要在启动时预配置，可以编辑 `docker-compose.yml` 取消注释 `environment` 部分
+
+**连接远程设备**：
+
+Docker 容器中连接 Android 设备推荐使用 **WiFi 调试**：
+
+1. 在 Android 设备上开启「开发者选项」→「无线调试」
+2. 记录设备的 IP 地址和端口号
+3. 在 Web 界面点击「添加无线设备」→ 输入 IP:端口 → 连接
+
+> ⚠️ **注意**：二维码配对功能依赖 mDNS 多播，在 Docker bridge 网络中可能受限。**强烈建议使用 `--network host` 模式**以获得完整功能支持。
+
+**更多 Docker 配置选项**，请参见下方的 [Docker 部署详细说明](#-docker-部署详细说明)。
+
+---
+
+启动后，在浏览器中打开 http://localhost:8000 即可开始使用！
+
+### 🎯 模型服务配置
 
 AutoGLM-GUI 只需要一个 OpenAI 兼容的模型服务。你可以：
 
@@ -134,50 +196,6 @@ autoglm-gui \
 pip install autoglm-gui
 autoglm-gui --base-url http://localhost:8000/v1 --model autoglm-phone-9b
 ```
-
-### 前置要求
-
-- Python 3.10+
-- Android 设备（Android 11+ 支持完全无线配对，无需数据线）
-- 已安装 ADB 并添加到系统 PATH（桌面版已内置）
-- 一个 OpenAI 兼容的 API 端点
-
-**关于设备连接**：
-- **Android 11+**：支持二维码扫码配对，完全无需数据线即可连接和控制设备
-- **Android 10 及更低版本**：需要先通过 USB 数据线连接并开启无线调试，之后可拔掉数据线无线使用
-
-### 快捷运行（推荐）
-
-**无需手动准备环境，直接安装运行：**
-
-```bash
-# 通过 pip 安装并启动
-pip install autoglm-gui
-autoglm-gui --base-url http://localhost:8080/v1
-```
-
-也可以使用 uvx 免安装启动，自动启动最新版（需已安装 uv，[安装教程](https://docs.astral.sh/uv/getting-started/installation/)）：
-
-```bash
-uvx autoglm-gui --base-url http://localhost:8080/v1
-```
-
-### 传统安装
-
-```bash
-# 从源码安装
-git clone https://github.com/your-repo/AutoGLM-GUI.git
-cd AutoGLM-GUI
-uv sync
-
-# 构建前端（必须）
-uv run python scripts/build.py
-
-# 启动服务
-uv run autoglm-gui --base-url http://localhost:8080/v1
-```
-
-启动后，在浏览器中打开 http://localhost:8000 即可开始使用！
 
 ## 🔄 升级指南
 
@@ -253,10 +271,18 @@ AutoGLM-GUI 支持同时控制多个 Android 设备：
 在初始化设备时，可以选择不同的 Agent 类型（默认：GLM Agent）：
 
 - **GLM Agent**：基于 GLM 模型优化，成熟稳定，适合大多数任务
-- **MAI Agent**：阿里通义团队开发的 Mobile Agent，支持多张历史截图上下文，适合复杂任务
+- **MAI Agent**：**内部实现**的 Mobile Agent，支持多张历史截图上下文，适合复杂任务
+  - 🆕 **现已完全内部化**：移除 ~1200 行第三方依赖，性能优化，中文适配
+  - 🔄 **向后兼容**：需要使用旧版本可选择 `mai_legacy` 类型
 
 MAI Agent 可配置参数：
 - `history_n`：历史截图数量（1-10，默认：3）
+
+**MAI Agent 增强特性**（v1.5.0+）：
+- ✅ 流式思考输出（实时显示推理过程）
+- ✅ 中文优化 Prompt（针对国内应用场景）
+- ✅ 性能监控（LLM 耗时、动作执行统计）
+- ✅ 详细的操作指南和错误避免提示
 
 <a id="mode-classic"></a>
 ### 🌿 普通模式（单模型 / Open AutoGLM）
@@ -265,22 +291,6 @@ MAI Agent 可配置参数：
 
 - **优点**：配置最简单，上手最快
 - **适用场景**：目标明确、步骤较少的任务（例如打开应用、简单导航）
-
-<a id="mode-dual"></a>
-### 🧠 双模型协作模式（增强）
-
-双模型模式通过**决策大模型（负责规划/纠错）** + **视觉小模型（负责观察/操作）**协作，提升复杂任务的稳定性与可控性。
-
-#### 工作模式（Thinking Mode）
-
-- **🚀 TURBO（推荐）**：大模型先生成“操作序列”，视觉模型批量执行；仅在异常时触发重规划（通常 1-2 次大模型调用）
-- **🎯 DEEP**：每一步都调用大模型做决策与分析，最稳但成本/耗时更高
-- **⚡ FAST**：同样逐步决策，但提示词更短、响应更快，适合轻量任务
-
-#### 配置要点
-
-- **决策大模型**：建议使用推理/规划能力较强的模型（如 GLM-4.7、GPT-4、Claude 等）
-- **视觉小模型**：建议使用具备 GUI 观察与操作能力的模型（如 AutoGLM-Phone-9B / `autoglm-phone`）
 
 <a id="mode-layered"></a>
 ### 🧩 分层代理模式（Layered Agent，增强 / 实验性）
@@ -292,21 +302,16 @@ MAI Agent 可配置参数：
 - **适用场景**：需要多轮推理、需要“边看边问边改计划”的复杂任务（例如浏览/筛选/对比、多轮表单填写等）
 - **重要限制**：执行层不负责“记笔记/保存中间信息/直接提取文本变量”；规划层需要信息时必须通过提问让执行层把屏幕内容“念出来”
 
-### 🎭 三种工作模式对比
+### 🎭 两种工作模式对比
 
-AutoGLM-GUI 提供了三种不同的代理工作模式，适用于不同的使用场景：
+AutoGLM-GUI 提供了两种不同的代理工作模式，适用于不同的使用场景：
 
 #### 1️⃣ 经典模式（Classic Mode）
 - **架构**：单一 `autoglm-phone` 视觉模型直接处理（即普通 Open AutoGLM 的体验）
 - **适用场景**：简单、明确的任务
 - **特点**：配置简单，适合快速上手
 
-#### 2️⃣ 双模型协作（Dual Model）
-- **架构**：决策大模型（GLM-4.7/GPT-4）+ 视觉小模型（autoglm-phone）
-- **适用场景**：需要智能规划的中高复杂度任务
-- **特点**：支持 TURBO/DEEP/FAST 三种思考模式，在成本、速度与稳定性之间做权衡
-
-#### 3️⃣ 分层代理（Layered Agent）🆕 实验性功能
+#### 2️⃣ 分层代理（Layered Agent）
 - **架构**：基于 Agent SDK 的分层任务执行系统
   - **规划层**：决策模型作为高级智能中枢，负责任务拆解和多轮推理
   - **执行层**：autoglm-phone 作为执行者，只负责观察和操作
@@ -314,12 +319,8 @@ AutoGLM-GUI 提供了三种不同的代理工作模式，适用于不同的使�
 - **特点**：规划层通过工具调用驱动执行层，过程更透明、更便于调试与迭代策略
 
 **选择建议**：
-- 🚀 **常规任务（订外卖、打车）**：双模型 TURBO 模式
-- 🎯 **复杂任务（浏览并评论帖子）**：双模型 DEEP 模式
+- 🚀 **常规任务（订外卖、打车）**：经典模式
 - 🏗️ **需要多轮推理的任务**：分层代理模式
-
-> 💬 **我们需要你的反馈！**
-> 不同的任务场景适合不同的模式，我们正在持续优化这些模式的性能和易用性。如果你在使用过程中有任何建议、遇到问题或发现某个模式特别好用/不好用，欢迎通过 [GitHub Issues](https://github.com/suyiiyii/AutoGLM-GUI/issues) 或 [QQ 交流群](https://qm.qq.com/q/J5eAs9tn0W) 告诉我们。你的反馈将帮助我们改进产品！
 
 ### 手动控制模式
 
@@ -370,6 +371,25 @@ AutoGLM-GUI 提供了三种不同的代理工作模式，适用于不同的使�
 
 ## 🛠️ 开发指南
 
+### 源码安装
+
+如果你需要从源码进行开发或定制，可以按照以下步骤：
+
+```bash
+# 1. 克隆仓库
+git clone https://github.com/suyiiyii/AutoGLM-GUI.git
+cd AutoGLM-GUI
+
+# 2. 安装依赖
+uv sync
+
+# 3. 构建前端（必须）
+uv run python scripts/build.py
+
+# 4. 启动服务
+uv run autoglm-gui --base-url http://localhost:8080/v1
+```
+
 ### 快速开发
 
 ```bash
@@ -390,45 +410,41 @@ uv run python scripts/build.py
 uv run python scripts/build.py --pack
 ```
 
-## 🐳 Docker 部署
+## 🐳 Docker 部署详细说明
 
-AutoGLM-GUI 支持 Docker 容器化部署，适合服务器端远程控制 Android 设备的场景。
+> 💡 **提示**：Docker 部署已整合到 [快速开始](#-快速开始) 部分，推荐直接查看上方的"方式二：Docker 部署"说明。
 
-### 快速启动
+本节提供更多 Docker 配置选项和高级用法。
 
-```bash
-# 1. 克隆仓库
-git clone https://github.com/suyiiyii/AutoGLM-GUI.git
-cd AutoGLM-GUI
+### 指定监听端口
 
-# 2. 创建环境变量文件
-cat > .env << EOF
-AUTOGLM_BASE_URL=https://open.bigmodel.cn/api/paas/v4
-AUTOGLM_MODEL_NAME=autoglm-phone
-AUTOGLM_API_KEY=sk-your-api-key
-EOF
-
-# 3. 启动容器
-docker-compose up -d
-
-# 4. 访问 http://localhost:8000
-```
-
-### 手动构建
+如果使用 host 网络模式且需要修改默认端口（8000），可以通过 `command` 参数指定：
 
 ```bash
-# 构建镜像
-docker build -t autoglm-gui:latest .
-
-# 运行容器 (Linux 推荐 host 网络)
+# 监听 9000 端口
 docker run -d --network host \
-  -e AUTOGLM_BASE_URL=https://open.bigmodel.cn/api/paas/v4 \
-  -e AUTOGLM_MODEL_NAME=autoglm-phone \
-  -e AUTOGLM_API_KEY=sk-xxx \
   -v autoglm_config:/root/.config/autoglm \
   -v autoglm_logs:/app/logs \
-  autoglm-gui:latest
+  ghcr.io/suyiiyii/autoglm-gui:main \
+  autoglm-gui --host 0.0.0.0 --port 9000 --no-browser
 ```
+
+如果使用 bridge 网络模式，则使用 `-p` 参数映射端口：
+
+```bash
+# 映射主机 9000 端口到容器 8000 端口
+docker run -d -p 9000:8000 \
+  -v autoglm_config:/root/.config/autoglm \
+  -v autoglm_logs:/app/logs \
+  ghcr.io/suyiiyii/autoglm-gui:main
+```
+
+### 镜像标签
+
+| 标签 | 说明 |
+|------|------|
+| `main` | 跟随 main 分支最新代码，推荐使用 |
+| `<commit-sha>` | 特定 commit 的镜像（如 `abc1234`），用于锁定版本 |
 
 ### 环境变量
 
@@ -437,16 +453,6 @@ docker run -d --network host \
 | `AUTOGLM_BASE_URL` | 模型 API 地址 | (必填) |
 | `AUTOGLM_MODEL_NAME` | 模型名称 | `autoglm-phone` |
 | `AUTOGLM_API_KEY` | API 密钥 | (必填) |
-
-### 连接远程设备
-
-Docker 容器中连接 Android 设备推荐使用 **WiFi 调试**：
-
-1. 在 Android 设备上开启「开发者选项」→「无线调试」
-2. 记录设备的 IP 地址和端口号
-3. 在 Web 界面点击「添加无线设备」→ 输入 IP:端口 → 连接
-
-> ⚠️ **注意**：二维码配对功能在 Docker bridge 网络中可能受限（依赖 mDNS 多播）。Linux 系统建议使用 `network_mode: host`。
 
 ### 健康检查
 

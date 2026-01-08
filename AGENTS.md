@@ -6,11 +6,12 @@ Guide for AI agents working in this codebase.
 
 **Python**: `uv run python` (NEVER use raw `python`)  
 **Frontend**: `pnpm` in `frontend/` directory  
-**DO NOT** modify `phone_agent/` or `mai_agent/` - third-party code
+**DO NOT** modify `phone_agent/` - third-party code  
+**Note**: `mai_agent` is now internally implemented (see `AutoGLM_GUI/agents/internal_mai_agent.py`)
 
 ## Configuration System
 
-AutoGLM-GUI uses its own configuration system, independent of `phone_agent` config classes.
+AutoGLM-GUI uses its own configuration system, independent of any third-party config classes.
 
 ### Core Configuration Classes
 
@@ -18,24 +19,7 @@ AutoGLM-GUI uses its own configuration system, independent of `phone_agent` conf
 - `AutoGLM_GUI.config.AgentConfig`: Agent behavior configuration
 - `AutoGLM_GUI.config.StepResult`: Execution result type
 
-### Type Conversion
-
-When interfacing with `phone_agent` (e.g., creating PhoneAgent instances),
-use `to_phone_agent_config()` methods:
-
-```python
-from AutoGLM_GUI.config import ModelConfig, AgentConfig
-
-# Create configs using AutoGLM-GUI types
-model_config = ModelConfig(base_url="...", model_name="...")
-agent_config = AgentConfig(device_id="...", max_steps=100)
-
-# Convert to phone_agent types (only needed internally in factories)
-phone_model = model_config.to_phone_agent_config()
-phone_agent = agent_config.to_phone_agent_config()
-```
-
-**Important**: Always use `AutoGLM_GUI.config` types in business logic. Only convert to `phone_agent` types at the boundary (e.g., inside agent factories).
+**Important**: Always use `AutoGLM_GUI.config` types in business logic. The system is fully decoupled from the legacy `phone_agent` classes.
 
 ## Build / Lint / Test Commands
 
@@ -130,9 +114,11 @@ export async function listDevices(): Promise<DeviceListResponse> {
 
 ### NEVER Modify Third-Party Code
 
-`phone_agent/` and `mai_agent/` are third-party. For modifications:
-1. Use monkey patches in `AutoGLM_GUI/phone_agent_patches.py`
-2. Or wrap functionality in `AutoGLM_GUI/` modules
+`phone_agent/` is third-party legacy code (kept for reference only).
+The project now uses internal agent implementations in `AutoGLM_GUI/agents/`.
+
+**Note**: `mai_agent/` was third-party but is now fully internalized.  
+Use `AutoGLM_GUI/agents/internal_mai_agent.py` for MAI Agent modifications.
 
 ### Type Safety (FORBIDDEN)
 
@@ -189,10 +175,12 @@ AutoGLM_GUI/           # Backend - FastAPI app
   platform_utils.py    # Cross-platform utils
 
 phone_agent/           # Third-party - DO NOT MODIFY
-mai_agent/             # Third-party - DO NOT MODIFY
+mai_agent/             # Legacy third-party code (internalized, kept for reference)
 
 frontend/src/          # React frontend
   routes/              # TanStack Router pages
   components/          # UI components
   api.ts               # API client
 ```
+
+- phone_agent 已经被弃用，请在本项目下的代码寻找替代

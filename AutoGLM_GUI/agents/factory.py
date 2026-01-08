@@ -49,6 +49,7 @@ def create_agent(
     model_config: ModelConfig,
     agent_config: AgentConfig,
     agent_specific_config: AgentSpecificConfig,
+    device,
     takeover_callback: Callable | None = None,
     confirmation_callback: Callable | None = None,
 ) -> BaseAgent:
@@ -60,6 +61,7 @@ def create_agent(
         model_config: Model configuration
         agent_config: Agent configuration
         agent_specific_config: Agent-specific configuration (e.g., MAIConfig fields)
+        device: DeviceProtocol instance (provided by PhoneAgentManager)
         takeover_callback: Takeover callback
         confirmation_callback: Confirmation callback
 
@@ -82,6 +84,7 @@ def create_agent(
             model_config=model_config,
             agent_config=agent_config,
             agent_specific_config=agent_specific_config,
+            device=device,
             takeover_callback=takeover_callback,
             confirmation_callback=confirmation_callback,
         )
@@ -105,67 +108,46 @@ def is_agent_type_registered(agent_type: str) -> bool:
 # ==================== Built-in Agent Creators ====================
 
 
-def _create_phone_agent(
-    model_config: ModelConfig,
-    agent_config: AgentConfig,
-    agent_specific_config: AgentSpecificConfig,
-    takeover_callback: Callable | None = None,
-    confirmation_callback: Callable | None = None,
-) -> BaseAgent:
-    from phone_agent import PhoneAgent
-
-    agent = PhoneAgent(
-        model_config=model_config.to_phone_agent_config(),
-        agent_config=agent_config.to_phone_agent_config(),
-        takeover_callback=takeover_callback,
-        confirmation_callback=confirmation_callback,
-    )
-    return agent  # type: ignore[return-value]
-
-
-def _create_mai_agent(
-    model_config: ModelConfig,
-    agent_config: AgentConfig,
-    agent_specific_config: AgentSpecificConfig,
-    takeover_callback: Callable | None = None,
-    confirmation_callback: Callable | None = None,
-) -> BaseAgent:
-    from .mai_adapter import MAIAgentAdapter, MAIAgentConfig
-
-    mai_config = MAIAgentConfig(
-        history_n=agent_specific_config.get("history_n", 3),
-        max_pixels=agent_specific_config.get("max_pixels"),
-        min_pixels=agent_specific_config.get("min_pixels"),
-        tools=agent_specific_config.get("tools"),
-        use_mai_prompt=agent_specific_config.get("use_mai_prompt", False),
-    )
-
-    return MAIAgentAdapter(
-        model_config=model_config,
-        agent_config=agent_config,
-        mai_config=mai_config,
-        takeover_callback=takeover_callback,
-        confirmation_callback=confirmation_callback,
-    )
-
-
 def _create_glm_agent_v2(
     model_config: ModelConfig,
     agent_config: AgentConfig,
     agent_specific_config: AgentSpecificConfig,
+    device,
     takeover_callback: Callable | None = None,
     confirmation_callback: Callable | None = None,
 ) -> BaseAgent:
-    from .glm_agent import GLMAgent
+    from .glm.agent import GLMAgent
 
     return GLMAgent(
         model_config=model_config,
         agent_config=agent_config,
+        device=device,
         confirmation_callback=confirmation_callback,
         takeover_callback=takeover_callback,
     )
 
 
-register_agent("glm_legacy", _create_phone_agent)
+def _create_internal_mai_agent(
+    model_config: ModelConfig,
+    agent_config: AgentConfig,
+    agent_specific_config: AgentSpecificConfig,
+    device,
+    takeover_callback: Callable | None = None,
+    confirmation_callback: Callable | None = None,
+) -> BaseAgent:
+    from .mai.agent import InternalMAIAgent
+
+    history_n = agent_specific_config.get("history_n", 3)
+
+    return InternalMAIAgent(
+        model_config=model_config,
+        agent_config=agent_config,
+        device=device,
+        history_n=history_n,
+        confirmation_callback=confirmation_callback,
+        takeover_callback=takeover_callback,
+    )
+
+
 register_agent("glm", _create_glm_agent_v2)
-register_agent("mai", _create_mai_agent)
+register_agent("mai", _create_internal_mai_agent)

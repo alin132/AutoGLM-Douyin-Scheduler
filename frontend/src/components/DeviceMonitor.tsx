@@ -1,5 +1,8 @@
 import React, { useRef, useEffect, useCallback, useState } from 'react';
 import { ScrcpyPlayer } from './ScrcpyPlayer';
+import { WidthControl } from './WidthControl';
+import { ResizableHandle } from './ResizableHandle';
+import { useLocalStorage } from '../hooks/useLocalStorage';
 import type { ScreenshotResponse } from '../api';
 import { getScreenshot } from '../api';
 import { Button } from '@/components/ui/button';
@@ -49,6 +52,10 @@ export function DeviceMonitor({
   >('success');
   const [showControlArea, setShowControlArea] = useState(false);
   const [showControls, setShowControls] = useState(false);
+  const [panelWidth, setPanelWidth] = useLocalStorage<number | 'auto'>(
+    'device-monitor-width',
+    320
+  );
 
   const videoStreamRef = useRef<{ close: () => void } | null>(null);
   const screenshotFetchingRef = useRef(false);
@@ -85,6 +92,16 @@ export function DeviceMonitor({
 
   const toggleControls = () => {
     setShowControls(prev => !prev);
+  };
+
+  const handleWidthChange = (width: number | 'auto') => {
+    setPanelWidth(width);
+  };
+
+  const handleResize = (deltaX: number) => {
+    if (typeof panelWidth !== 'number') return;
+    const newWidth = Math.min(640, Math.max(240, panelWidth + deltaX));
+    setPanelWidth(newWidth);
   };
 
   const handleVideoStreamReady = useCallback(
@@ -150,72 +167,98 @@ export function DeviceMonitor({
     return () => clearInterval(interval);
   }, [deviceId, videoStreamFailed, displayMode, isVisible]);
 
+  const widthStyle =
+    typeof panelWidth === 'number' ? `${panelWidth}px` : 'auto';
+
   return (
     <Card
-      className={`w-[320px] flex-shrink-0 relative min-h-0 overflow-hidden bg-background ${className}`}
+      className={`flex-shrink-0 relative min-h-0 overflow-hidden bg-background ${className}`}
+      style={{
+        width: widthStyle,
+        minWidth: typeof panelWidth === 'number' ? undefined : '240px',
+        maxWidth: typeof panelWidth === 'number' ? undefined : '640px',
+      }}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
+      {/* Resizable handle - left edge */}
+      {typeof panelWidth === 'number' && (
+        <ResizableHandle
+          onResize={handleResize}
+          minWidth={240}
+          maxWidth={640}
+          className="z-20"
+        />
+      )}
       {/* Toggle and controls - shown on hover */}
       <div
         className={`absolute top-4 right-4 z-10 transition-opacity duration-200 ${
           showControlArea ? 'opacity-100' : 'opacity-0 pointer-events-none'
         }`}
       >
-        <div className="flex items-center gap-2">
-          {/* Control buttons - slide in/out */}
+        <div className="flex items-start gap-2">
+          {/* Combined controls container - both controls slide together */}
           <div
-            className={`flex items-center gap-1 bg-popover/90 backdrop-blur rounded-xl p-1 shadow-lg border border-border transition-all duration-300 ${
+            className={`flex flex-col items-end gap-2 transition-all duration-300 ${
               showControls
                 ? 'opacity-100 translate-x-0'
                 : 'opacity-0 translate-x-4 pointer-events-none'
             }`}
           >
-            {!isRemoteDevice && (
+            {/* Display mode controls */}
+            <div className="flex items-center gap-1 bg-popover/90 backdrop-blur rounded-xl p-1 shadow-lg border border-border">
+              {!isRemoteDevice && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => toggleDisplayMode('auto')}
+                  className={`h-7 px-3 text-xs rounded-lg transition-colors ${
+                    displayMode === 'auto'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-foreground hover:bg-accent hover:text-accent-foreground'
+                  }`}
+                >
+                  {t.devicePanel?.auto || 'Auto'}
+                </Button>
+              )}
+              {!isRemoteDevice && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => toggleDisplayMode('video')}
+                  className={`h-7 px-3 text-xs rounded-lg transition-colors ${
+                    displayMode === 'video'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-foreground hover:bg-accent hover:text-accent-foreground'
+                  }`}
+                >
+                  <Video className="w-3 h-3 mr-1" />
+                  {t.devicePanel?.video || 'Video'}
+                </Button>
+              )}
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => toggleDisplayMode('auto')}
+                onClick={() => toggleDisplayMode('screenshot')}
                 className={`h-7 px-3 text-xs rounded-lg transition-colors ${
-                  displayMode === 'auto'
+                  displayMode === 'screenshot'
                     ? 'bg-primary text-primary-foreground'
                     : 'text-foreground hover:bg-accent hover:text-accent-foreground'
                 }`}
               >
-                {t.devicePanel?.auto || 'Auto'}
+                <ImageIcon className="w-3 h-3 mr-1" />
+                {t.devicePanel?.image || 'Image'}
               </Button>
-            )}
-            {!isRemoteDevice && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => toggleDisplayMode('video')}
-                className={`h-7 px-3 text-xs rounded-lg transition-colors ${
-                  displayMode === 'video'
-                    ? 'bg-primary text-primary-foreground'
-                    : 'text-foreground hover:bg-accent hover:text-accent-foreground'
-                }`}
-              >
-                <Video className="w-3 h-3 mr-1" />
-                {t.devicePanel?.video || 'Video'}
-              </Button>
-            )}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => toggleDisplayMode('screenshot')}
-              className={`h-7 px-3 text-xs rounded-lg transition-colors ${
-                displayMode === 'screenshot'
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-foreground hover:bg-accent hover:text-accent-foreground'
-              }`}
-            >
-              <ImageIcon className="w-3 h-3 mr-1" />
-              {t.devicePanel?.image || 'Image'}
-            </Button>
+            </div>
+
+            {/* Width controls - aligned with display mode controls */}
+            <WidthControl
+              currentWidth={panelWidth}
+              onWidthChange={handleWidthChange}
+            />
           </div>
 
-          {/* Toggle button - visible when control area is shown */}
+          {/* Toggle button - always visible in top-right */}
           <Button
             variant="ghost"
             size="icon"
@@ -300,7 +343,7 @@ export function DeviceMonitor({
             )
           }
           onStreamReady={handleVideoStreamReady}
-          fallbackTimeout={10000}
+          fallbackTimeout={20000}
         />
       ) : (
         <div className="w-full h-full flex items-center justify-center bg-muted/30 min-h-0">

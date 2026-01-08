@@ -1,12 +1,7 @@
-"""ADB Device implementation of DeviceProtocol.
+"""ADB Device implementation of DeviceProtocol."""
 
-This module wraps the existing phone_agent.adb module to provide
-a DeviceProtocol-compliant implementation.
-"""
-
-from phone_agent import adb
-from phone_agent.adb import ADBConnection
-
+from AutoGLM_GUI import adb
+from AutoGLM_GUI.adb import ADBConnection
 from AutoGLM_GUI.device_protocol import (
     DeviceInfo,
     DeviceManagerProtocol,
@@ -15,7 +10,7 @@ from AutoGLM_GUI.device_protocol import (
 )
 
 
-class ADBDevice:
+class ADBDevice(DeviceProtocol):
     """
     ADB device implementation using local subprocess calls.
 
@@ -121,7 +116,7 @@ class ADBDevice:
 assert isinstance(ADBDevice("test"), DeviceProtocol)
 
 
-class ADBDeviceManager:
+class ADBDeviceManager(DeviceManagerProtocol):
     """
     ADB device manager implementation.
 

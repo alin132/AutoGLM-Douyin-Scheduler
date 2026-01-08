@@ -78,7 +78,7 @@ class TestRunner:
         mock_device = self.mock_device
         instruction = self.instruction
         # Import here to avoid circular imports
-        from phone_agent import PhoneAgent
+        from AutoGLM_GUI.agents.glm.agent import GLMAgent
         from AutoGLM_GUI.config import AgentConfig, ModelConfig
 
         # Create configs if not provided
@@ -117,9 +117,10 @@ class TestRunner:
         ):
             try:
                 # Create and run agent
-                agent = PhoneAgent(
+                agent = GLMAgent(
                     model_config=model_config,
                     agent_config=agent_config,
+                    device=mock_device,
                 )
 
                 result_message = agent.run(instruction)

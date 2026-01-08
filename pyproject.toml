@@ -1,6 +1,6 @@
 [project]
 name = "autoglm-gui"
-version = "1.4.1"
+version = "1.5.0"
 description = "Web GUI for AutoGLM Phone Agent - AI-powered Android automation"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -21,7 +21,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
-    "apscheduler>=3.10.0",
+    "apscheduler>=3.10.0,<4.0.0",  # Scheduled task scheduler
     "fastapi>=0.124.0",
     "fastmcp>=2.0.0",
     "httpx[socks]>=0.28.1",
@@ -31,7 +31,6 @@ dependencies = [
     "openai>=2.9.0",
     "openai-agents>=0.6.4",
     "pillow>=11.3.0",
-    "playwright>=1.57.0",
     "prometheus-client>=0.21.0",
     "python-socketio>=5.11.0",
     "pyyaml>=6.0.3",

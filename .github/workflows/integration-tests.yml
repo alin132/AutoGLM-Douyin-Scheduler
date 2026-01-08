@@ -26,7 +26,7 @@ jobs:
 
     strategy:
       matrix:
-        python-version: ['3.11']
+        python-version: ['3.10', '3.11', '3.12', '3.13', '3.14']
 
     steps:
       - name: Checkout code
@@ -48,10 +48,6 @@ jobs:
           uv sync --dev --frozen
 
       - name: Run integration tests
-        env:
-          AUTOGLM_BASE_URL: ${{ secrets.AUTOGLM_BASE_URL }}
-          AUTOGLM_MODEL_NAME: ${{ secrets.AUTOGLM_MODEL_NAME }}
-          AUTOGLM_API_KEY: ${{ secrets.AUTOGLM_API_KEY }}
         run: |
           uv run pytest -v
 

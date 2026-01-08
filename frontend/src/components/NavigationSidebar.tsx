@@ -3,8 +3,9 @@ import { Link, useMatchRoute } from '@tanstack/react-router';
 import {
   MessageSquare,
   ListChecks,
-  Clock,
   FileText,
+  History,
+  Clock,
   type LucideIcon,
 } from 'lucide-react';
 import {
@@ -44,9 +45,15 @@ export function NavigationSidebar({ className }: NavigationSidebarProps) {
       path: '/workflows',
     },
     {
+      id: 'history',
+      icon: History,
+      label: t.navigation.history || '历史记录',
+      path: '/history',
+    },
+    {
       id: 'scheduled-tasks',
       icon: Clock,
-      label: t.navigation.scheduledTasks,
+      label: t.navigation.scheduledTasks || '定时任务',
       path: '/scheduled-tasks',
     },
     {

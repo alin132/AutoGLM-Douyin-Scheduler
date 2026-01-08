@@ -45,19 +45,17 @@ COPY phone_agent ./phone_agent
 COPY mai_agent ./mai_agent
 COPY scrcpy-server-v3.3.3 ./scrcpy-server-v3.3.3
 
-# Install Python dependencies
-RUN pip install --no-cache-dir .
-
-# Copy frontend build output from Stage 1
+# Copy frontend build output from Stage 1 BEFORE pip install
+# This ensures static files are included in the Python package
 COPY --from=frontend /app/frontend/dist ./AutoGLM_GUI/static
+
+# Install Python dependencies (now includes static files)
+RUN pip install --no-cache-dir .
 
 # Create directories for persistent data
 RUN mkdir -p /root/.config/autoglm /app/logs
 
 # Environment variables (can be overridden at runtime)
-ENV AUTOGLM_BASE_URL=""
-ENV AUTOGLM_MODEL_NAME="autoglm-phone"
-ENV AUTOGLM_API_KEY=""
 ENV AUTOGLM_CORS_ORIGINS="*"
 
 # Expose the default port

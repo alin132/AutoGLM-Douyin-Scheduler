@@ -7,12 +7,14 @@ import time
 from collections import defaultdict
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
-from phone_agent.adb.connection import ADBConnection, ConnectionType, DeviceInfo
-
+from AutoGLM_GUI.adb import ADBConnection, ConnectionType, DeviceInfo
 from AutoGLM_GUI.logger import logger
 from AutoGLM_GUI.types import DeviceConnectionType
+
+if TYPE_CHECKING:
+    from AutoGLM_GUI.device_protocol import DeviceProtocol
 
 
 def convert_connection_type(ct: ConnectionType) -> DeviceConnectionType:
@@ -244,9 +246,8 @@ class DeviceManager:
         self._mdns_devices: dict[str, ManagedDevice] = {}  # Key: serial
         self._enable_mdns_discovery: bool = True  # Feature toggle
 
-        # Remote device management (HTTP proxy devices)
-        self._remote_devices: dict[str, object] = {}  # Key: synthetic_serial
-        self._remote_device_configs: dict[str, dict] = {}  # Store remote device configs
+        self._remote_devices: dict[str, "DeviceProtocol"] = {}
+        self._remote_device_configs: dict[str, dict] = {}
 
     @classmethod
     def get_instance(cls, adb_path: str = "adb") -> DeviceManager:
@@ -396,16 +397,8 @@ class DeviceManager:
         device_with_serials: list[tuple[DeviceInfo, str]] = []
 
         for device_info in adb_devices:
+            # get_device_serial always returns a value (uses device_id as fallback)
             serial = get_device_serial(device_info.device_id, self._adb_path)
-
-            if not serial:
-                # CRITICAL: Log error and skip this device
-                logger.error(
-                    f"Failed to get serial for device {device_info.device_id}. "
-                    f"Skipping this device. Check ADB access."
-                )
-                continue
-
             device_with_serials.append((device_info, serial))
 
         # Step 2: Group devices by serial
@@ -626,7 +619,7 @@ class DeviceManager:
         Returns:
             Tuple of (success, message, wifi_device_id)
         """
-        from phone_agent.adb.connection import ADBConnection, ConnectionType
+        from AutoGLM_GUI.adb import ADBConnection, ConnectionType
 
         from AutoGLM_GUI.adb_plus import get_wifi_ip
 
@@ -673,7 +666,7 @@ class DeviceManager:
         Returns:
             Tuple of (success, message)
         """
-        from phone_agent.adb.connection import ADBConnection
+        from AutoGLM_GUI.adb import ADBConnection
 
         conn = ADBConnection(adb_path=self._adb_path)
         ok, msg = conn.disconnect(device_id)
@@ -699,7 +692,7 @@ class DeviceManager:
         """
         import re
 
-        from phone_agent.adb.connection import ADBConnection
+        from AutoGLM_GUI.adb import ADBConnection
 
         # IP format validation
         ip_pattern = r"^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$"
@@ -737,7 +730,7 @@ class DeviceManager:
         """
         import re
 
-        from phone_agent.adb.connection import ADBConnection
+        from AutoGLM_GUI.adb import ADBConnection
 
         from AutoGLM_GUI.adb_plus import pair_device
 
@@ -921,7 +914,7 @@ class DeviceManager:
             logger.info(f"Remote device removed: {serial}")
             return (True, "Remote device removed successfully")
 
-    def get_remote_device_instance(self, serial: str) -> object | None:
+    def get_remote_device_instance(self, serial: str) -> "DeviceProtocol | None":
         """Get RemoteDevice instance for device adapter injection.
 
         Args:
@@ -942,3 +935,45 @@ class DeviceManager:
             Serial (synthetic or ADB) or None if not found
         """
         return self._device_id_to_serial.get(device_id)
+
+    def get_device_protocol(self, device_id: str) -> "DeviceProtocol":
+        """
+        根据 device_id 获取 DeviceProtocol 实例（统一入口）.
+
+        自动识别设备类型（ADB / Remote）并返回对应的实现。
+
+        Args:
+            device_id: 设备标识符（USB serial / IP:port / remote_xxx）
+
+        Returns:
+            DeviceProtocol 实例（ADBDevice 或 RemoteDevice）
+
+        Raises:
+            ValueError: 设备未找到或不可用
+
+        Example:
+            >>> manager = DeviceManager.get_instance()
+            >>> device = manager.get_device_protocol("192.168.1.100:5555")
+            >>> screenshot = device.get_screenshot()  # 不关心是 ADB 还是 Remote
+        """
+        with self._devices_lock:
+            # 1. 查找设备元数据
+            managed = self.get_device_by_device_id(device_id)
+            if not managed:
+                raise ValueError(f"Device {device_id} not found in DeviceManager")
+
+            # 2. 根据连接类型返回对应实现
+            if managed.connection_type == DeviceConnectionType.REMOTE:
+                # Remote device: 返回 HTTP 客户端
+                remote_device = self.get_remote_device_instance(managed.serial)
+                if not remote_device:
+                    raise ValueError(
+                        f"Remote device instance not found for serial {managed.serial}"
+                    )
+                return remote_device  # type: ignore[return-value]
+
+            else:
+                # ADB device (USB / WiFi): 返回本地 ADB 包装
+                from AutoGLM_GUI.devices.adb_device import ADBDevice
+
+                return ADBDevice(managed.primary_device_id)

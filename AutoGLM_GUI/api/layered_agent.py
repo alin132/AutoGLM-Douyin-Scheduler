@@ -53,9 +53,20 @@ def _clear_session(session_id: str) -> bool:
 
 
 def get_planner_model() -> str:
-    """获取规划层使用的模型名称，从配置读取."""
-    config = config_manager.get_effective_config()
-    return config.decision_model_name or "glm-4.7"
+    """获取规划层使用的模型名称."""
+    config_manager.load_file_config()
+    effective_config = config_manager.get_effective_config()
+
+    model_name = effective_config.decision_model_name
+
+    if not model_name:
+        raise ValueError(
+            "决策模型未配置。使用分层代理模式需要配置决策模型。\n"
+            "请在全局配置中设置决策模型的 Base URL、模型名称和 API Key。"
+        )
+
+    logger.info(f"[LayeredAgent] Using decision model: {model_name}")
+    return model_name
 
 
 PLANNER_INSTRUCTIONS = """## 核心目标
@@ -282,20 +293,31 @@ async def chat(device_id: str, message: str) -> str:
 
 
 def _setup_openai_client() -> AsyncOpenAI:
-    """设置 OpenAI 客户端，使用 AutoGLM 的配置"""
+    """设置 OpenAI 客户端，使用决策模型配置"""
     config_manager.load_file_config()
     effective_config = config_manager.get_effective_config()
 
-    if not effective_config.base_url:
-        raise ValueError("base_url not configured")
+    # 检查决策模型配置
+    decision_base_url = effective_config.decision_base_url
+    decision_api_key = effective_config.decision_api_key
 
-    planner_model = get_planner_model()
-    logger.info(f"[LayeredAgent] API Base URL: {effective_config.base_url}")
-    logger.info(f"[LayeredAgent] Planner Model: {planner_model}")
+    if not decision_base_url:
+        raise ValueError(
+            "决策模型 Base URL 未配置。使用分层代理模式需要配置决策模型。\n"
+            "请在全局配置中设置决策模型的 Base URL、模型名称和 API Key。"
+        )
+
+    # decision_api_key 可以为 None（某些本地模型不需要）
+    planner_model = get_planner_model()  # 这里会再次检查 model_name
+
+    logger.info("[LayeredAgent] Decision model config:")
+    logger.info(f"  - Base URL: {decision_base_url}")
+    logger.info(f"  - Model: {planner_model}")
+    logger.info(f"  - API Key: {'***' if decision_api_key else 'None'}")
 
     return AsyncOpenAI(
-        base_url=effective_config.base_url,
-        api_key=effective_config.api_key,
+        base_url=decision_base_url,
+        api_key=decision_api_key or "EMPTY",  # 某些本地模型需要非空字符串
     )
 
 
@@ -375,18 +397,24 @@ async def layered_agent_chat(request: LayeredAgentRequest):
     - done: Final response
     - error: Error occurred
     """
+    from datetime import datetime
+
     from agents.stream_events import (
         RawResponsesStreamEvent,
         RunItemStreamEvent,
     )
 
+    from AutoGLM_GUI.history_manager import history_manager
+    from AutoGLM_GUI.models.history import ConversationRecord
+
     async def event_generator():
+        start_time = datetime.now()
+        final_output = ""
+        final_success = False
+
         try:
-            # Ensure agent is initialized
             agent = _ensure_agent()
 
-            # 获取或创建 session 以保持对话上下文
-            # 优先使用 session_id，其次使用 device_id，最后使用默认值
             session_id = request.session_id or request.device_id or "default"
             session = _get_or_create_session(session_id)
 
@@ -574,10 +602,10 @@ async def layered_agent_chat(request: LayeredAgentRequest):
                 with _active_runs_lock:
                     _active_runs.pop(session_id, None)
 
-            # Final result
             final_output = (
                 result.final_output if hasattr(result, "final_output") else ""
             )
+            final_success = True
             event_data = {
                 "type": "done",
                 "content": final_output,
@@ -587,11 +615,35 @@ async def layered_agent_chat(request: LayeredAgentRequest):
 
         except Exception as e:
             logger.exception(f"[LayeredAgent] Error: {e}")
+            final_output = str(e)
+            final_success = False
             event_data = {
                 "type": "error",
                 "message": str(e),
             }
             yield f"data: {json.dumps(event_data, ensure_ascii=False)}\n\n"
+
+        finally:
+            if request.device_id and final_output:
+                from AutoGLM_GUI.device_manager import DeviceManager
+
+                device_manager = DeviceManager.get_instance()
+                serialno = device_manager.get_serial_by_device_id(request.device_id)
+                if serialno:
+                    end_time = datetime.now()
+                    record = ConversationRecord(
+                        task_text=request.message,
+                        final_message=final_output,
+                        success=final_success,
+                        steps=0,
+                        start_time=start_time,
+                        end_time=end_time,
+                        duration_ms=int((end_time - start_time).total_seconds() * 1000),
+                        source="layered",
+                        source_detail=request.session_id or "",
+                        error_message=None if final_success else final_output,
+                    )
+                    history_manager.add_record(serialno, record)
 
     return StreamingResponse(
         event_generator(),

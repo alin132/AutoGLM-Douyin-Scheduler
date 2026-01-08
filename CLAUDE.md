@@ -226,11 +226,11 @@ See: `AutoGLM_GUI/resources/apks/ADBKeyBoard.LICENSE.txt`
 
 ### Request Flow
 
-**Basic PhoneAgent Flow**:
+**Basic Agent Flow**:
 1. **User Chat Request** → Frontend (`ChatKitPanel.tsx`) → API (`/api/chat`) → Backend (`api/agents.py`)
 2. **PhoneAgentManager** → `run_chat()` acquires device lock, gets or creates agent
-3. **PhoneAgent.run()** → Orchestrates multi-step task execution
-4. **Each Step**: Screenshot → `ModelClient` → LLM API (with vision) → `ActionHandler` → ADB execution
+3. **Agent.run()** → Orchestrates multi-step task execution
+4. **Each Step**: Screenshot → LLM API (with vision) → `ActionHandler` → ADB execution
 5. **Streaming Updates** → SSE (Server-Sent Events) → Frontend updates in real-time
 
 **Layered Agent Flow** (NEW):
@@ -240,14 +240,6 @@ See: `AutoGLM_GUI/resources/apks/ADBKeyBoard.LICENSE.txt`
 4. **Vision Model** → PhoneAgent executes `do()` actions on device
 5. **Session Persistence** → SQLiteSession stores conversation history
 6. **Streaming** → SSE streams both decision thinking and execution updates
-
-**Dual Model Flow** (NEW):
-1. **User Request** → Frontend → API (`/api/dual-model/chat`) → Backend (`api/dual_model.py`)
-2. **Decision Model** → Analyzes task, decides strategy (text-only model)
-3. **DualModelCoordinator** → Mediates between decision and vision models
-4. **Vision Model** → PhoneAgent executes actions based on decision model guidance
-5. **Anomaly Detection** → Monitors for stuck states, triggers recovery
-6. **Streaming** → Separate callbacks for decision and vision model updates
 
 **Video Streaming Flow**:
 1. **Frontend** → Socket.IO `connect-device` event → Backend (`socketio_server.py`)
@@ -262,11 +254,10 @@ See: `AutoGLM_GUI/resources/apks/ADBKeyBoard.LICENSE.txt`
 - **`server.py`**: Wrapper that imports the FastAPI app from `api/__init__.py`
 - **`api/__init__.py`**: App factory pattern with modular routers:
   - `agents.py` - Agent lifecycle (init, chat, reset, abort, status)
-  - `layered_agent.py` - Hierarchical execution (decision model + vision model)
+  - `layered_agent.py` - Hierarchical execution with planning and execution layers
   - `devices.py` - Device discovery/management (list, WiFi, mDNS, QR pairing)
   - `control.py` - Direct device control (tap, swipe, screenshot)
   - `media.py` - Screenshot/video endpoints
-  - `dual_model.py` - Dual model coordination (decision + vision)
   - `metrics.py` - Prometheus metrics
   - `version.py` - Version information
   - `workflows.py` - Workflow execution
@@ -302,9 +293,6 @@ See: `AutoGLM_GUI/resources/apks/ADBKeyBoard.LICENSE.txt`
   - Separate error log files (50MB rotation, 30 days retention)
   - Configurable via CLI parameters (--log-level, --log-file, --no-log-file)
   - Used throughout AutoGLM_GUI/ (phone_agent/ uses original print statements)
-- **`phone_agent_patches.py`**: Monkey patches for upstream phone_agent
-  - Adds streaming thinking chunks callback
-  - Performance metrics tracking (TTFT, thinking time, total time)
 - **`platform_utils.py`**: Cross-platform subprocess management
   - Async command execution (event loop safe)
   - Windows compatibility (subprocess.run vs asyncio)
@@ -318,31 +306,21 @@ See: `AutoGLM_GUI/resources/apks/ADBKeyBoard.LICENSE.txt`
   - `mdns.py` - mDNS device discovery
   - `touch.py` - Touch/swipe primitives
 
-### Phone Agent (`phone_agent/`)
+### Internal Agents (`AutoGLM_GUI/agents/`)
 
-Core automation engine from Open-AutoGLM:
+Internal implementations of automation agents:
 
-- **`agent.py`**: `PhoneAgent` class - main orchestrator
-  - `run(task)` - Execute a natural language task
-  - `_execute_step()` - Single step: screenshot → LLM call → action execution
-  - Manages conversation context and step counting
-- **`actions/handler.py`**: `ActionHandler` - executes actions from LLM output
-  - `do()` - Generic actions: tap, swipe, type, launch app, etc.
-  - `finish()` - Task completion
-  - `takeover()` - Human intervention request (login, CAPTCHA)
-  - Coordinate normalization (0-1000 range → actual device pixels)
-- **`adb/`**: Low-level ADB operations
-  - `connection.py` - Device connection management
-  - `device.py` - Device info (screen size, current app)
-  - `input.py` - Touch/keyboard input
-  - `screenshot.py` - Screenshot capture with Pillow
-- **`model/client.py`**: `ModelClient` - OpenAI-compatible API client
-  - Handles vision messages (text + base64 images)
-  - Streaming support
-- **`config/`**: Prompts and app definitions
-  - `prompts.py` - System prompts (Chinese/English)
-  - `apps.py` - Common Chinese app package names and aliases
-  - `i18n.py` - Internationalization utilities
+- **`factory.py`**: Agent factory using registry pattern for creating different agent types.
+- **`protocols.py`**: Base interfaces for all agents.
+- **`glm/`**: GLM-based agent implementation.
+- **`mai/`**: Internalized MAI Agent (Mobile Agent) with multi-image support.
+- **`stream_runner.py`**: SSE streamer for agent execution steps.
+
+### Action System (`AutoGLM_GUI/actions/`)
+
+Executes actions parsed from LLM outputs:
+- **`handler.py`**: Maps high-level actions (Tap, Swipe, Type) to ADB commands.
+- **`types.py`**: Data models for action results.
 
 ### Device Identification (Two-Layer System)
 
@@ -382,9 +360,10 @@ DeviceManager aggregates both connections:
 **Important for API Integration**:
 - When calling `/api/init`, `/api/chat`, etc., use the current `device_id`
 - `device_id` may change during connection switches
-- PhoneAgent instances are indexed by `device_id` in `state.agents`
+- PhoneAgent instances are indexed by `device_id` in PhoneAgentManager
 - Connection switches may require agent reinitialization (future improvement: automatic migration)
-- DeviceManager provides `get_agent_by_serial()` to find agents across connection changes
+- API layer coordinates device and agent information by iterating through device.connections
+- PhoneAgentManager does not expose serial-based queries (maintains domain boundary)
 
 ### Frontend Architecture (`frontend/src/`)
 
@@ -411,7 +390,6 @@ DeviceManager aggregates both connections:
   - Ripple animation on tap
 - **`ChatKitPanel.tsx`**: Multi-mode chat interface
   - Basic mode: Direct PhoneAgent execution
-  - Dual model mode: Decision model + vision model
   - Layered mode: Hierarchical task execution
 - **`DevicePanel.tsx`**: Device info and initialization UI
   - Agent configuration (model, base URL, API key)
@@ -422,10 +400,6 @@ DeviceManager aggregates both connections:
   - WiFi pairing controls
   - QR code pairing (wireless debugging)
   - mDNS device discovery
-- **`DualModelPanel.tsx`**: Dual model configuration
-  - Decision model settings
-  - Vision model settings
-  - Model coordination options
 - **`api.ts`**: API client functions (uses `redaxios` - lightweight axios alternative)
 
 ### Electron Desktop Application (`electron/`)
@@ -477,15 +451,8 @@ AutoGLM-GUI can be packaged as a standalone desktop application using Electron, 
 - **Response Format**: LLM returns JSON with `thinking` and `action` fields
 - **Action Schema**: `{type: "do"|"finish"|"takeover", ...params}` parsed by `ActionHandler`
 
-**Dual Model Mode** (NEW):
-- **Architecture**: Decision model (large, text-only) coordinates Vision model (small, vision-capable)
-- **Decision Model**: Plans high-level strategy, decides when to use vision model
-- **Vision Model**: Executes device actions based on screenshots
-- **Coordination**: `DualModelCoordinator` manages model communication
-- **Anomaly Detection**: Detects stuck states (repeated screenshots, consecutive failures)
-
 **Layered Agent Mode** (NEW):
-- **Architecture**: Hierarchical execution with decision model + vision model
+- **Architecture**: Hierarchical execution with planning and execution layers
 - **Decision Layer**: Uses `openai-agents` library for session management and planning
 - **Execution Layer**: PhoneAgent executes planned actions on device
 - **Function Tools**: `do()` for device actions, `chat()` for information extraction
@@ -603,7 +570,6 @@ AutoGLM_GUI/           # Backend FastAPI app (entry point)
     devices.py         # Device management
     control.py         # Direct device control
     media.py           # Screenshot/video
-    dual_model.py      # Dual model coordination
     metrics.py         # Prometheus metrics
     version.py         # Version info
     workflows.py       # Workflow execution
@@ -613,7 +579,6 @@ AutoGLM_GUI/           # Backend FastAPI app (entry point)
   phone_agent_manager.py # Agent lifecycle singleton
   config_manager.py    # Type-safe config management
   logger.py            # Loguru logging setup
-  phone_agent_patches.py # Monkey patches for phone_agent
   platform_utils.py    # Cross-platform utilities
   adb_plus/            # Extended ADB utilities
     device.py
@@ -624,20 +589,13 @@ AutoGLM_GUI/           # Backend FastAPI app (entry point)
     ip.py
     mdns.py
     touch.py
-  dual_model/          # Decision + vision coordination
-    dual_agent.py
-    decision_model.py
-    vision_model.py
+  agents/              # Internal agent implementations
+    glm/
+    mai/
+    factory.py
   static/              # Built frontend (copied from frontend/dist)
   resources/           # Bundled resources
     apks/              # ADB Keyboard APK (GPL-2.0)
-
-phone_agent/           # Core automation engine (third-party, DO NOT MODIFY)
-  agent.py             # PhoneAgent orchestrator
-  actions/handler.py   # Action execution
-  adb/                 # Low-level ADB operations
-  model/client.py      # LLM API client
-  config/              # Prompts and app definitions
 
 frontend/              # React frontend
   src/
@@ -650,7 +608,6 @@ frontend/              # React frontend
       ChatKitPanel.tsx # Multi-mode chat
       DevicePanel.tsx  # Device UI
       DeviceSidebar.tsx # Device list
-      DualModelPanel.tsx # Dual model config
     api.ts             # API client
   dist/                # Build output (not in git)
 
@@ -693,7 +650,11 @@ scrcpy-server-v3.3.3   # Scrcpy server binary (bundled)
 8. **ADB Command Execution**: Always use `platform_utils.py` functions instead of direct subprocess calls
 9. **Device ID vs Serial**: Remember `device_id` changes with connection type, `serial` is stable
 10. **Concurrent Execution**: PhoneAgentManager prevents concurrent tasks on same device - respect the locks
-11. **phone_agent Modifications**: NEVER modify code under `phone_agent/` - use monkey patches in `phone_agent_patches.py`
+11. **Legacy Code**: `phone_agent` and `mai_agent` directories are third-party legacy code kept for reference only - use internal agents in `AutoGLM_GUI/agents/`
+12. **Respecting Domain Boundaries**:
+    - PhoneAgentManager should only deal with device_id (not serial)
+    - DeviceManager should only deal with device connections (not agents)
+    - API layer coordinates between domains using public interfaces only
 
 ### Electron Desktop Application
 1. **Resources Not Prepared**: Electron build requires `resources/backend/` and `resources/adb/` - use `build_electron.py`
@@ -750,10 +711,8 @@ scrcpy-server-v3.3.3   # Scrcpy server binary (bundled)
    - Downloads artifacts from Actions tab
 
 ### Important Notes
-- **phone_agent**: Third-party code, do NOT modify for compatibility
+- **Legacy Directories**: `phone_agent` and `mai_agent` are third-party code, do NOT modify
 - **Encoding**: Use PyInstaller runtime hook for Windows UTF-8, not application code
 - **Resources**: Always check `sys._MEIPASS` exists in PyInstaller environment
-
-
-- phone_agent 下面是第三方的代码，目前通过直接拷贝代码的情况下进行引用，为了保持兼容性，任何时候不能修改里面的代码
-- 运行 adb 命令的时候，尽量使用AutoGLM_GUI/platform_utils.py 下面的代码执行命令，为了更好的兼容性
+- **ADB**: Use `AutoGLM_GUI/platform_utils.py` for executing commands
+- **Refactoring**: Prefer internal agent implementations in `AutoGLM_GUI/agents/`
