@@ -217,6 +217,16 @@ export const zh = {
       },
     },
   },
+  deviceMonitor: {
+    compact: '紧凑',
+    standard: '标准',
+    wide: '宽屏',
+    auto: '自动',
+    decreaseWidth: '减小宽度',
+    increaseWidth: '增大宽度',
+    showWidthControls: '显示宽度控制',
+    hideWidthControls: '隐藏宽度控制',
+  },
   presetConfigs: {
     bigmodel: {
       name: '智谱 BigModel',
@@ -268,8 +278,30 @@ export const zh = {
   navigation: {
     chat: '对话',
     workflows: 'Workflows',
+    history: '历史记录',
     scheduledTasks: '定时任务',
     logs: '日志',
+  },
+  historyPage: {
+    title: '对话历史',
+    selectDevice: '选择设备',
+    noDevices: '没有可用设备',
+    noRecords: '暂无记录',
+    noRecordsDesc: '完成的任务将显示在这里',
+    clearAll: '清空全部',
+    clearAllConfirm: '确定清空该设备的所有历史记录？',
+    success: '成功',
+    failed: '失败',
+    steps: '{count} 步',
+    duration: '{time}',
+    source: {
+      chat: '对话',
+      layered: '分层代理',
+      scheduled: '定时任务',
+    },
+    loadMore: '加载更多',
+    loading: '加载中...',
+    deleteConfirm: '确定删除这条记录？',
   },
   logs: {
     title: '日志文件',

@@ -694,6 +694,21 @@ export async function deleteConfig(): Promise<{
   return res.data;
 }
 
+export interface ReinitAllAgentsResponse {
+  success: boolean;
+  total: number;
+  succeeded: string[];
+  failed: Record<string, string>;
+  message: string;
+}
+
+export async function reinitAllAgents(): Promise<ReinitAllAgentsResponse> {
+  const res = await axios.post<ReinitAllAgentsResponse>(
+    '/api/agents/reinit-all'
+  );
+  return res.data;
+}
+
 export interface VersionCheckResponse {
   current_version: string;
   latest_version: string | null;
@@ -1106,6 +1121,61 @@ export async function abortLayeredAgentChat(sessionId: string): Promise<{
     session_id: sessionId,
   });
   return res.data;
+}
+
+// ==================== History API ====================
+
+export interface HistoryRecordResponse {
+  id: string;
+  task_text: string;
+  final_message: string;
+  success: boolean;
+  steps: number;
+  start_time: string;
+  end_time: string | null;
+  duration_ms: number;
+  source: 'chat' | 'layered' | 'scheduled';
+  source_detail: string;
+  error_message: string | null;
+}
+
+export interface HistoryListResponse {
+  records: HistoryRecordResponse[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export async function listHistory(
+  serialno: string,
+  limit: number = 50,
+  offset: number = 0
+): Promise<HistoryListResponse> {
+  const res = await axios.get<HistoryListResponse>(`/api/history/${serialno}`, {
+    params: { limit, offset },
+  });
+  return res.data;
+}
+
+export async function getHistoryRecord(
+  serialno: string,
+  recordId: string
+): Promise<HistoryRecordResponse> {
+  const res = await axios.get<HistoryRecordResponse>(
+    `/api/history/${serialno}/${recordId}`
+  );
+  return res.data;
+}
+
+export async function deleteHistoryRecord(
+  serialno: string,
+  recordId: string
+): Promise<void> {
+  await axios.delete(`/api/history/${serialno}/${recordId}`);
+}
+
+export async function clearHistory(serialno: string): Promise<void> {
+  await axios.delete(`/api/history/${serialno}`);
 }
 
 // ==================== Scheduled Tasks API ====================
