@@ -27,12 +27,16 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 import {
   Loader2,
   Play,
@@ -48,8 +52,11 @@ import {
   Activity,
   MessageSquare,
   AlertCircle,
+  ChevronDown,
+  ChevronRight,
+  Filter,
+  Search,
 } from 'lucide-react';
-import { useTranslation } from '../lib/i18n-context';
 import { useToast } from '@/components/ui/use-toast';
 
 export const Route = createFileRoute('/douyin-auto-reply')({
@@ -57,7 +64,6 @@ export const Route = createFileRoute('/douyin-auto-reply')({
 });
 
 function DouyinAutoReplyComponent() {
-  const t = useTranslation();
   const { toast } = useToast();
   const [status, setStatus] = useState<DouyinMonitorStatus | null>(null);
   const [devices, setDevices] = useState<Device[]>([]);
@@ -66,6 +72,13 @@ function DouyinAutoReplyComponent() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const logsEndRef = useRef<HTMLDivElement>(null);
+
+  // 日志过滤
+  const [logFilter, setLogFilter] = useState<'all' | 'error'>('all');
+  const [historySearch, setHistorySearch] = useState('');
+
+  // 高级选项折叠状态
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   const [configForm, setConfigForm] = useState({
     device_id: '',
@@ -116,6 +129,10 @@ function DouyinAutoReplyComponent() {
         fastgpt_api_key: statusData.fastgpt_api_key || '',
         fastgpt_timeout: statusData.fastgpt_timeout || 60,
       });
+      // 如果有高级选项已启用，自动展开
+      if (statusData.decision_model_enabled || statusData.fastgpt_enabled) {
+        setAdvancedOpen(true);
+      }
     } catch (error) {
       toast({
         title: '加载失败',
@@ -140,13 +157,29 @@ function DouyinAutoReplyComponent() {
   // 自动滚动日志到底部
   useEffect(() => {
     if (logsEndRef.current) {
-      // 找到 ScrollArea 的 viewport 并滚动
       const viewport = logsEndRef.current.closest('[data-slot="scroll-area-viewport"]');
       if (viewport) {
         viewport.scrollTop = viewport.scrollHeight;
       }
     }
   }, [logs]);
+
+  // 过滤后的日志
+  const filteredLogs = logs.filter(log => {
+    if (logFilter === 'error') return log.level === 'error';
+    return true;
+  });
+
+  // 过滤后的历史
+  const filteredHistory = history.filter(item => {
+    if (!historySearch) return true;
+    const search = historySearch.toLowerCase();
+    return (
+      item.sender?.toLowerCase().includes(search) ||
+      item.received_message?.toLowerCase().includes(search) ||
+      item.reply_message?.toLowerCase().includes(search)
+    );
+  });
 
   const handleStart = async () => {
     if (!configForm.device_id) {
@@ -254,6 +287,8 @@ function DouyinAutoReplyComponent() {
 
   const statusInfo = getStatusInfo();
   const isRunning = status?.status && status.status !== 'stopped';
+  const errorCount = logs.filter(l => l.level === 'error').length;
+
 
   if (loading) {
     return (
@@ -319,149 +354,168 @@ function DouyinAutoReplyComponent() {
               配置
             </CardTitle>
           </CardHeader>
-          <CardContent className="flex-1 space-y-4 overflow-auto">
-            <div>
-              <Label className="text-sm">设备</Label>
-              <Select
-                value={configForm.device_id}
-                onValueChange={(value) => setConfigForm({ ...configForm, device_id: value })}
-              >
-                <SelectTrigger className="mt-1" disabled={isRunning}>
-                  <SelectValue placeholder="选择设备" />
-                </SelectTrigger>
-                <SelectContent>
-                  {devices.map((device) => (
-                    <SelectItem key={device.id} value={device.id}>
-                      {device.model || device.id}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          <CardContent className="flex-1 overflow-auto">
+            <ScrollArea className="h-full pr-2">
+              <div className="space-y-4">
+                {/* 基础配置 */}
+                <div>
+                  <Label className="text-sm">设备</Label>
+                  <Select
+                    value={configForm.device_id}
+                    onValueChange={(value) => setConfigForm({ ...configForm, device_id: value })}
+                  >
+                    <SelectTrigger className="mt-1" disabled={isRunning}>
+                      <span className="truncate">
+                        {configForm.device_id
+                          ? devices.find((d) => d.id === configForm.device_id)?.model || configForm.device_id
+                          : '选择设备'}
+                      </span>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {devices.map((device) => (
+                        <SelectItem key={device.id} value={device.id}>
+                          {device.model || device.id}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
-            <div>
-              <Label className="text-sm">检查间隔</Label>
-              <div className="flex items-center gap-2 mt-1">
-                <Input
-                  type="number"
-                  min={10}
-                  value={configForm.check_interval}
-                  onChange={(e) => setConfigForm({ ...configForm, check_interval: parseInt(e.target.value) || 30 })}
-                  disabled={isRunning}
-                  className="w-20"
-                />
-                <span className="text-sm text-muted-foreground">秒</span>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <Switch
-                checked={configForm.auto_reply_enabled}
-                onCheckedChange={(checked) => setConfigForm({ ...configForm, auto_reply_enabled: checked })}
-                disabled={isRunning}
-              />
-              <Label className="text-sm">启用自动回复</Label>
-            </div>
-
-            <div>
-              <Label className="text-sm">回复风格</Label>
-              <Textarea
-                value={configForm.reply_prompt_template}
-                onChange={(e) => setConfigForm({ ...configForm, reply_prompt_template: e.target.value })}
-                placeholder="例如：友好、专业、简洁..."
-                rows={2}
-                className="mt-1"
-                disabled={isRunning}
-              />
-              <p className="text-xs text-muted-foreground mt-1">
-                自定义 AI 回复的风格和要求
-              </p>
-            </div>
-
-            {/* 决策模型开关 */}
-            <div className="pt-3 border-t space-y-2">
-              <div className="flex items-center gap-2">
-                <Switch
-                  checked={configForm.decision_model_enabled}
-                  onCheckedChange={(checked) => setConfigForm({ ...configForm, decision_model_enabled: checked })}
-                  disabled={isRunning}
-                />
-                <Label className="text-sm">启用决策模型解析</Label>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                使用决策模型（在设置中配置）解析 AI 返回结果，提高识别准确性
-              </p>
-            </div>
-
-            {/* FastGPT 配置 */}
-            <div className="pt-3 border-t space-y-3">
-              <div className="flex items-center gap-2">
-                <Switch
-                  checked={configForm.fastgpt_enabled}
-                  onCheckedChange={(checked) => setConfigForm({ ...configForm, fastgpt_enabled: checked })}
-                  disabled={isRunning}
-                />
-                <Label className="text-sm">启用 FastGPT 智能回复</Label>
-              </div>
-              
-              {configForm.fastgpt_enabled && (
-                <div className="space-y-3 pl-2 border-l-2 border-blue-200 dark:border-blue-800">
-                  <div>
-                    <Label className="text-xs">API 地址</Label>
+                <div>
+                  <Label className="text-sm">检查间隔</Label>
+                  <div className="flex items-center gap-2 mt-1">
                     <Input
-                      value={configForm.fastgpt_base_url}
-                      onChange={(e) => setConfigForm({ ...configForm, fastgpt_base_url: e.target.value })}
-                      placeholder="http://xxx/api/v1/chat/completions"
-                      className="mt-1 text-xs"
+                      type="number"
+                      min={10}
+                      value={configForm.check_interval}
+                      onChange={(e) => setConfigForm({ ...configForm, check_interval: parseInt(e.target.value) || 30 })}
                       disabled={isRunning}
+                      className="w-20"
                     />
-                  </div>
-                  <div>
-                    <Label className="text-xs">API Key</Label>
-                    <Input
-                      type="password"
-                      value={configForm.fastgpt_api_key}
-                      onChange={(e) => setConfigForm({ ...configForm, fastgpt_api_key: e.target.value })}
-                      placeholder="fastgpt-xxx"
-                      className="mt-1 text-xs"
-                      disabled={isRunning}
-                    />
-                  </div>
-                  <div>
-                    <Label className="text-xs">超时时间</Label>
-                    <div className="flex items-center gap-2 mt-1">
-                      <Input
-                        type="number"
-                        min={10}
-                        value={configForm.fastgpt_timeout}
-                        onChange={(e) => setConfigForm({ ...configForm, fastgpt_timeout: parseInt(e.target.value) || 60 })}
-                        className="w-20 text-xs"
-                        disabled={isRunning}
-                      />
-                      <span className="text-xs text-muted-foreground">秒</span>
-                    </div>
+                    <span className="text-sm text-muted-foreground">秒</span>
                   </div>
                 </div>
-              )}
-            </div>
 
-            <Button onClick={handleSaveConfig} className="w-full" disabled={isRunning}>
-              保存配置
-            </Button>
+                <div className="flex items-center gap-2">
+                  <Switch
+                    checked={configForm.auto_reply_enabled}
+                    onCheckedChange={(checked) => setConfigForm({ ...configForm, auto_reply_enabled: checked })}
+                    disabled={isRunning}
+                  />
+                  <Label className="text-sm">启用自动回复</Label>
+                </div>
 
-            {/* 统计信息 */}
-            <div className="pt-4 border-t space-y-2">
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">已回复消息</span>
-                <span className="font-medium">{status?.messages_replied || 0}</span>
+                <div>
+                  <Label className="text-sm">回复风格</Label>
+                  <Textarea
+                    value={configForm.reply_prompt_template}
+                    onChange={(e) => setConfigForm({ ...configForm, reply_prompt_template: e.target.value })}
+                    placeholder="例如：友好、专业、简洁..."
+                    rows={2}
+                    className="mt-1"
+                    disabled={isRunning}
+                  />
+                </div>
+
+                {/* 高级选项 - 可折叠 */}
+                <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
+                  <CollapsibleTrigger className="flex items-center gap-2 text-sm font-medium w-full py-2 hover:text-primary transition-colors">
+                    {advancedOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                    高级选项
+                    {(configForm.decision_model_enabled || configForm.fastgpt_enabled) && (
+                      <Badge variant="secondary" className="ml-auto text-xs">已启用</Badge>
+                    )}
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="space-y-4 pt-2">
+                    {/* 决策模型开关 */}
+                    <div className="space-y-2 p-3 bg-muted/50 rounded-lg">
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          checked={configForm.decision_model_enabled}
+                          onCheckedChange={(checked) => setConfigForm({ ...configForm, decision_model_enabled: checked })}
+                          disabled={isRunning}
+                        />
+                        <Label className="text-sm">决策模型解析</Label>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        使用决策模型解析 AI 返回结果，提高识别准确性（在设置中配置）
+                      </p>
+                    </div>
+
+                    {/* FastGPT 配置 */}
+                    <div className="space-y-3 p-3 bg-muted/50 rounded-lg">
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          checked={configForm.fastgpt_enabled}
+                          onCheckedChange={(checked) => setConfigForm({ ...configForm, fastgpt_enabled: checked })}
+                          disabled={isRunning}
+                        />
+                        <Label className="text-sm">FastGPT 智能回复</Label>
+                      </div>
+                      
+                      {configForm.fastgpt_enabled && (
+                        <div className="space-y-3 pl-2 border-l-2 border-blue-200 dark:border-blue-800">
+                          <div>
+                            <Label className="text-xs">API 地址</Label>
+                            <Input
+                              value={configForm.fastgpt_base_url}
+                              onChange={(e) => setConfigForm({ ...configForm, fastgpt_base_url: e.target.value })}
+                              placeholder="http://xxx/api/v1/chat/completions"
+                              className="mt-1 text-xs"
+                              disabled={isRunning}
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs">API Key</Label>
+                            <Input
+                              type="password"
+                              value={configForm.fastgpt_api_key}
+                              onChange={(e) => setConfigForm({ ...configForm, fastgpt_api_key: e.target.value })}
+                              placeholder="fastgpt-xxx"
+                              className="mt-1 text-xs"
+                              disabled={isRunning}
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs">超时时间</Label>
+                            <div className="flex items-center gap-2 mt-1">
+                              <Input
+                                type="number"
+                                min={10}
+                                value={configForm.fastgpt_timeout}
+                                onChange={(e) => setConfigForm({ ...configForm, fastgpt_timeout: parseInt(e.target.value) || 60 })}
+                                className="w-20 text-xs"
+                                disabled={isRunning}
+                              />
+                              <span className="text-xs text-muted-foreground">秒</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
+
+                <Button onClick={handleSaveConfig} className="w-full" disabled={isRunning}>
+                  保存配置
+                </Button>
+
+                {/* 统计信息 */}
+                <div className="pt-4 border-t space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">已回复消息</span>
+                    <span className="font-medium">{status?.messages_replied || 0}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">上次检查</span>
+                    <span className="font-medium">{status?.last_check_time || '-'}</span>
+                  </div>
+                </div>
               </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">上次检查</span>
-                <span className="font-medium">{status?.last_check_time || '-'}</span>
-              </div>
-            </div>
+            </ScrollArea>
           </CardContent>
         </Card>
+
 
         {/* 右侧：日志和历史 - 自适应宽度 */}
         <Card className="flex-1 flex flex-col min-w-0 overflow-hidden">
@@ -471,6 +525,11 @@ function DouyinAutoReplyComponent() {
                 <TabsTrigger value="logs" className="flex items-center gap-1">
                   <Activity className="h-4 w-4" />
                   实时日志
+                  {errorCount > 0 && (
+                    <Badge variant="destructive" className="ml-1 h-5 px-1.5 text-xs">
+                      {errorCount}
+                    </Badge>
+                  )}
                 </TabsTrigger>
                 <TabsTrigger value="history" className="flex items-center gap-1">
                   <Clock className="h-4 w-4" />
@@ -480,24 +539,44 @@ function DouyinAutoReplyComponent() {
             </CardHeader>
             <CardContent className="flex-1 pt-4 min-h-0 overflow-hidden">
               <TabsContent value="logs" className="h-full m-0 overflow-hidden">
-                <div className="h-full flex flex-col overflow-hidden">
+                <div className="h-full flex flex-col overflow-hidden gap-2">
+                  {/* 日志过滤器 */}
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Filter className="h-4 w-4 text-muted-foreground" />
+                    <Button
+                      variant={logFilter === 'all' ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setLogFilter('all')}
+                    >
+                      全部
+                    </Button>
+                    <Button
+                      variant={logFilter === 'error' ? 'destructive' : 'outline'}
+                      size="sm"
+                      onClick={() => setLogFilter('error')}
+                    >
+                      仅错误 {errorCount > 0 && `(${errorCount})`}
+                    </Button>
+                  </div>
+
                   {/* 当前动作 */}
                   {status?.current_action && (
-                    <div className="mb-2 p-2 bg-blue-50 dark:bg-blue-950 rounded-lg flex items-center gap-2 shrink-0">
+                    <div className="p-2 bg-blue-50 dark:bg-blue-950 rounded-lg flex items-center gap-2 shrink-0">
                       <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
                       <span className="text-sm text-blue-700 dark:text-blue-300">
                         {status.current_action}
                       </span>
                     </div>
                   )}
+
                   <ScrollArea className="flex-1 border rounded-lg min-h-0">
                     <div className="p-3 space-y-1 font-mono text-xs">
-                      {logs.length === 0 ? (
+                      {filteredLogs.length === 0 ? (
                         <p className="text-muted-foreground text-center py-8">
-                          暂无日志，启动监控后将显示实时日志
+                          {logFilter === 'error' ? '暂无错误日志' : '暂无日志，启动监控后将显示实时日志'}
                         </p>
                       ) : (
-                        logs.map((log, index) => (
+                        filteredLogs.map((log, index) => (
                           <div
                             key={index}
                             className={`flex gap-2 ${log.level === 'error' ? 'text-red-500' : 'text-muted-foreground'}`}
@@ -514,45 +593,60 @@ function DouyinAutoReplyComponent() {
                   </ScrollArea>
                 </div>
               </TabsContent>
-              <TabsContent value="history" className="h-full m-0">
-                <ScrollArea className="h-full border rounded-lg">
-                  <div className="p-3 space-y-3">
-                    {history.length === 0 ? (
-                      <p className="text-muted-foreground text-center py-8">
-                        暂无回复历史
-                      </p>
-                    ) : (
-                      history.map((item, index) => (
-                        <div key={index} className="border rounded-lg p-3 space-y-1 text-sm">
-                          <div className="flex items-center justify-between">
-                            <span className="font-medium">用户：{item.sender || '未知'}</span>
-                            <div className="flex items-center gap-2">
-                              {item.success ? (
-                                <CheckCircle2 className="h-4 w-4 text-green-500" />
-                              ) : (
-                                <XCircle className="h-4 w-4 text-red-500" />
-                              )}
-                              <span className="text-xs text-muted-foreground">
-                                {new Date(item.timestamp).toLocaleString()}
-                              </span>
-                            </div>
-                          </div>
-                          <div>
-                            <span className="text-muted-foreground">收到: </span>
-                            {item.received_message || '-'}
-                          </div>
-                          <div>
-                            <span className="text-muted-foreground">回复: </span>
-                            {item.reply_message || '-'}
-                          </div>
-                          {item.error && (
-                            <div className="text-red-500">错误: {item.error}</div>
-                          )}
-                        </div>
-                      ))
-                    )}
+              <TabsContent value="history" className="h-full m-0 overflow-hidden">
+                <div className="h-full flex flex-col overflow-hidden gap-2">
+                  {/* 历史搜索 */}
+                  <div className="flex items-center gap-2 shrink-0">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        placeholder="搜索用户名或消息内容..."
+                        value={historySearch}
+                        onChange={(e) => setHistorySearch(e.target.value)}
+                        className="pl-8"
+                      />
+                    </div>
                   </div>
-                </ScrollArea>
+
+                  <ScrollArea className="flex-1 border rounded-lg min-h-0">
+                    <div className="p-3 space-y-3">
+                      {filteredHistory.length === 0 ? (
+                        <p className="text-muted-foreground text-center py-8">
+                          {historySearch ? '未找到匹配的记录' : '暂无回复历史'}
+                        </p>
+                      ) : (
+                        filteredHistory.map((item, index) => (
+                          <div key={index} className="border rounded-lg p-3 space-y-1 text-sm">
+                            <div className="flex items-center justify-between">
+                              <span className="font-medium">用户：{item.sender || '未知'}</span>
+                              <div className="flex items-center gap-2">
+                                {item.success ? (
+                                  <CheckCircle2 className="h-4 w-4 text-green-500" />
+                                ) : (
+                                  <XCircle className="h-4 w-4 text-red-500" />
+                                )}
+                                <span className="text-xs text-muted-foreground">
+                                  {new Date(item.timestamp).toLocaleString()}
+                                </span>
+                              </div>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">收到: </span>
+                              {item.received_message || '-'}
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">回复: </span>
+                              {item.reply_message || '-'}
+                            </div>
+                            {item.error && (
+                              <div className="text-red-500">错误: {item.error}</div>
+                            )}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </ScrollArea>
+                </div>
               </TabsContent>
             </CardContent>
           </Tabs>

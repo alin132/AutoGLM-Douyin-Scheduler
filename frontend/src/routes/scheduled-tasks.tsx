@@ -496,7 +496,14 @@ function ScheduledTasksComponent() {
                 }
               >
                 <SelectTrigger>
-                  <SelectValue placeholder={t.scheduledTasks.selectDevice} />
+                  <span className="truncate">
+                    {formData.device_id
+                      ? (() => {
+                          const device = devices.find(d => d.id === formData.device_id);
+                          return device ? `${device.model} (${device.id})` : formData.device_id;
+                        })()
+                      : t.scheduledTasks.selectDevice}
+                  </span>
                 </SelectTrigger>
                 <SelectContent>
                   {devices.map(device => (

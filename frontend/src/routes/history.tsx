@@ -200,7 +200,11 @@ function HistoryComponent() {
         <div className="flex items-center gap-4">
           <Select value={selectedSerial} onValueChange={setSelectedSerial}>
             <SelectTrigger className="w-[200px]">
-              <SelectValue placeholder={t.historyPage.selectDevice} />
+              <span className="truncate">
+                {selectedSerial
+                  ? devices.find(d => d.serial === selectedSerial)?.model || selectedSerial
+                  : t.historyPage.selectDevice}
+              </span>
             </SelectTrigger>
             <SelectContent>
               {devices.length === 0 ? (
