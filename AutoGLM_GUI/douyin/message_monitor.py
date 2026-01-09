@@ -459,36 +459,66 @@ class DouyinMessageMonitor:
         reply_content = self._generate_reply(received_message, sender_name)
         self._add_log(f"回复内容: {reply_content}")
         
-        # 点击输入框
-        self._current_action = "输入回复..."
-        self._add_log("点击输入框")
-        await self._run_step_async("点击底部的输入框", 2)
-        await asyncio.sleep(0.5)
+        # 发送消息（最多重试2次）
+        send_success = False
+        max_retries = 2
         
-        # 输入回复
-        await self._run_step_async(f"输入文字：{reply_content}", 2)
-        await asyncio.sleep(0.5)
-        
-        # 发送
-        self._current_action = "发送消息..."
-        self._add_log("点击发送")
-        await self._run_step_async("点击发送按钮", 2)
-        await asyncio.sleep(1)
+        for attempt in range(max_retries + 1):
+            if attempt > 0:
+                self._add_log(f"第 {attempt + 1} 次尝试发送...")
+            
+            # 点击输入框
+            self._current_action = "输入回复..."
+            self._add_log("点击输入框")
+            await self._run_step_async("点击底部的输入框", 2)
+            await asyncio.sleep(0.5)
+            
+            # 输入回复
+            await self._run_step_async(f"输入文字：{reply_content}", 2)
+            await asyncio.sleep(0.5)
+            
+            # 发送
+            self._current_action = "发送消息..."
+            self._add_log("点击发送")
+            await self._run_step_async("点击发送按钮", 2)
+            await asyncio.sleep(1)
+            
+            # 检查是否发送成功
+            self._current_action = "检查发送结果..."
+            self._add_log("检查消息是否发送成功")
+            check_result = await self._run_step_async(
+                f"看聊天界面，最后一条蓝色气泡消息是否是「{reply_content[:20]}」？是就回答「发送成功」，不是就回答「发送失败」",
+                2
+            )
+            
+            send_success = "成功" in check_result and "失败" not in check_result
+            
+            if send_success:
+                self._add_log("✓ 消息发送成功")
+                break
+            else:
+                if attempt < max_retries:
+                    self._add_log(f"发送失败，准备重试...", "error")
+                    await asyncio.sleep(1)
+                else:
+                    self._add_log("✗ 消息发送失败，已达最大重试次数", "error")
         
         # 返回
         self._current_action = "返回列表..."
         self._add_log("返回消息列表")
         await self._run_step_async("点击左上角返回按钮", 2)
         
-        self._messages_replied += 1
-        self._add_log(f"✓ 回复完成 (总计: {self._messages_replied})")
+        if send_success:
+            self._messages_replied += 1
+            self._add_log(f"✓ 回复完成 (总计: {self._messages_replied})")
         
-        # 记录历史，使用对方名字
+        # 记录历史
         self._add_history(
             sender=sender_name,
             received_message=received_message[:100] if received_message else "",
             reply_message=reply_content,
-            success=True,
+            success=send_success,
+            error=None if send_success else "消息发送失败",
         )
 
     def _get_fastgpt_chat_id(self, user_id: str) -> str:

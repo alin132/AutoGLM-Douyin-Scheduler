@@ -65,7 +65,7 @@ function DouyinAutoReplyComponent() {
   const [history, setHistory] = useState<DouyinMonitorReplyHistory[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
-  const logsContainerRef = useRef<HTMLDivElement>(null);
+  const logsEndRef = useRef<HTMLDivElement>(null);
 
   const [configForm, setConfigForm] = useState({
     device_id: '',
@@ -139,12 +139,9 @@ function DouyinAutoReplyComponent() {
 
   // 自动滚动日志到底部
   useEffect(() => {
-    if (logsContainerRef.current) {
-      // 找到 ScrollArea 的 viewport 元素并滚动
-      const viewport = logsContainerRef.current.closest('[data-slot="scroll-area-viewport"]');
-      if (viewport) {
-        viewport.scrollTop = viewport.scrollHeight;
-      }
+    const scrollContainer = logsEndRef.current?.parentElement;
+    if (scrollContainer) {
+      scrollContainer.scrollTop = scrollContainer.scrollHeight;
     }
   }, [logs]);
 
@@ -475,8 +472,8 @@ function DouyinAutoReplyComponent() {
                       </span>
                     </div>
                   )}
-                  <ScrollArea className="flex-1 border rounded-lg">
-                    <div ref={logsContainerRef} className="p-3 space-y-1 font-mono text-xs">
+                  <div className="flex-1 border rounded-lg overflow-auto">
+                    <div className="p-3 space-y-1 font-mono text-xs">
                       {logs.length === 0 ? (
                         <p className="text-muted-foreground text-center py-8">
                           暂无日志，启动监控后将显示实时日志
@@ -494,8 +491,9 @@ function DouyinAutoReplyComponent() {
                           </div>
                         ))
                       )}
+                      <div ref={logsEndRef} />
                     </div>
-                  </ScrollArea>
+                  </div>
                 </div>
               </TabsContent>
               <TabsContent value="history" className="h-full m-0">
