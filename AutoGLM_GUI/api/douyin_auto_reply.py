@@ -227,6 +227,7 @@ class MonitorConfigUpdate(BaseModel):
     check_interval: int | None = None
     auto_reply_enabled: bool | None = None
     reply_prompt_template: str | None = None
+    decision_model_enabled: bool | None = None
     fastgpt_enabled: bool | None = None
     fastgpt_base_url: str | None = None
     fastgpt_api_key: str | None = None
@@ -273,6 +274,7 @@ async def update_monitor_config(data: MonitorConfigUpdate):
         check_interval=data.check_interval,
         auto_reply_enabled=data.auto_reply_enabled,
         reply_prompt_template=data.reply_prompt_template,
+        decision_model_enabled=data.decision_model_enabled,
         fastgpt_enabled=data.fastgpt_enabled,
         fastgpt_base_url=data.fastgpt_base_url,
         fastgpt_api_key=data.fastgpt_api_key,

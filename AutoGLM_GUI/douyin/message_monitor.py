@@ -2,12 +2,14 @@
 
 采用分步执行策略，先检查当前页面状态再决定下一步操作。
 使用 AutoGLM-Phone 视觉模型执行操作。
+支持可选的决策模型来解析 AI 返回结果。
 支持 FastGPT 智能回复。
 """
 
 import asyncio
 import hashlib
 import json
+import re
 from collections import deque
 from datetime import datetime
 from enum import Enum
@@ -15,6 +17,7 @@ from pathlib import Path
 
 import requests
 
+from AutoGLM_GUI.config_manager import config_manager
 from AutoGLM_GUI.logger import logger
 
 
@@ -54,6 +57,9 @@ class DouyinMessageMonitor:
         self._reply_prompt_template: str = ""
         self._auto_reply_enabled: bool = False
         
+        # 决策模型开关（配置从全局设置读取）
+        self._decision_model_enabled: bool = False
+        
         # FastGPT 配置
         self._fastgpt_enabled: bool = False
         self._fastgpt_base_url: str = ""
@@ -65,6 +71,9 @@ class DouyinMessageMonitor:
         self._current_action: str = ""
         self._last_check_time: str | None = None
         self._messages_replied: int = 0
+        
+        # 已回复消息缓存（用户名+消息内容 -> 时间戳），避免重复回复
+        self._replied_cache: dict[str, str] = {}
         
         self._ensure_dirs()
         self._load_config()
@@ -94,6 +103,8 @@ class DouyinMessageMonitor:
                 self._check_interval = config.get("check_interval", 30)
                 self._reply_prompt_template = config.get("reply_prompt_template", "")
                 self._auto_reply_enabled = config.get("auto_reply_enabled", False)
+                # 决策模型开关
+                self._decision_model_enabled = config.get("decision_model_enabled", False)
                 # FastGPT 配置
                 self._fastgpt_enabled = config.get("fastgpt_enabled", False)
                 self._fastgpt_base_url = config.get("fastgpt_base_url", "")
@@ -109,6 +120,8 @@ class DouyinMessageMonitor:
                 "check_interval": self._check_interval,
                 "reply_prompt_template": self._reply_prompt_template,
                 "auto_reply_enabled": self._auto_reply_enabled,
+                # 决策模型开关
+                "decision_model_enabled": self._decision_model_enabled,
                 # FastGPT 配置
                 "fastgpt_enabled": self._fastgpt_enabled,
                 "fastgpt_base_url": self._fastgpt_base_url,
@@ -165,6 +178,7 @@ class DouyinMessageMonitor:
             "check_interval": self._check_interval,
             "auto_reply_enabled": self._auto_reply_enabled,
             "reply_prompt_template": self._reply_prompt_template,
+            "decision_model_enabled": self._decision_model_enabled,
             "fastgpt_enabled": self._fastgpt_enabled,
             "fastgpt_base_url": self._fastgpt_base_url,
             "fastgpt_api_key": self._fastgpt_api_key,
@@ -180,6 +194,7 @@ class DouyinMessageMonitor:
             "check_interval": self._check_interval,
             "auto_reply_enabled": self._auto_reply_enabled,
             "reply_prompt_template": self._reply_prompt_template,
+            "decision_model_enabled": self._decision_model_enabled,
             "fastgpt_enabled": self._fastgpt_enabled,
             "fastgpt_base_url": self._fastgpt_base_url,
             "fastgpt_api_key": self._fastgpt_api_key,
@@ -195,6 +210,7 @@ class DouyinMessageMonitor:
         check_interval: int | None = None,
         auto_reply_enabled: bool | None = None,
         reply_prompt_template: str | None = None,
+        decision_model_enabled: bool | None = None,
         fastgpt_enabled: bool | None = None,
         fastgpt_base_url: str | None = None,
         fastgpt_api_key: str | None = None,
@@ -208,6 +224,8 @@ class DouyinMessageMonitor:
             self._auto_reply_enabled = auto_reply_enabled
         if reply_prompt_template is not None:
             self._reply_prompt_template = reply_prompt_template
+        if decision_model_enabled is not None:
+            self._decision_model_enabled = decision_model_enabled
         if fastgpt_enabled is not None:
             self._fastgpt_enabled = fastgpt_enabled
         if fastgpt_base_url is not None:
@@ -418,7 +436,8 @@ class DouyinMessageMonitor:
         
         self._add_log(f"检查结果: {check_result[:50]}...")
         
-        has_unread = check_result.strip().startswith("有未读") or "有未读私信" in check_result[:20]
+        # 解析是否有未读消息
+        has_unread, unread_chat_name = self._parse_unread_check(check_result)
         
         if not has_unread:
             self._add_log("没有未读私信，跳过")
@@ -429,7 +448,12 @@ class DouyinMessageMonitor:
         self._current_action = "进入对话..."
         self._add_log("点击未读私信对话")
         
-        await self._run_step_async("在私信列表中，找到右侧有红色数字的那条私信，点击它进入聊天", 2)
+        # 如果决策模型解析出了对话名称，直接点击
+        if unread_chat_name:
+            self._add_log(f"点击对话: {unread_chat_name}")
+            await self._run_step_async(f"点击名为「{unread_chat_name}」的私信对话", 2)
+        else:
+            await self._run_step_async("在私信列表中，找到右侧有红色数字的那条私信，点击它进入聊天", 2)
         await asyncio.sleep(1.5)
         
         # 读取对方名字
@@ -440,7 +464,7 @@ class DouyinMessageMonitor:
             "看聊天界面顶部，对方的名字是什么？只告诉我名字",
             2
         )
-        sender_name = self._extract_name(name_result) if name_result else "用户"
+        sender_name = self._parse_sender_name(name_result) if name_result else "用户"
         self._add_log(f"对方名字: {sender_name}")
         
         # 读取对方消息
@@ -451,9 +475,18 @@ class DouyinMessageMonitor:
             "看聊天界面，白色气泡是对方发的消息，蓝色气泡是我发的消息。对方发的最后一条白色气泡消息内容是什么？只告诉我消息内容",
             2
         )
-        received_message = self._extract_message_content(read_result)
+        received_message = self._parse_message_content(read_result)
         
         self._add_log(f"对方消息: {received_message[:50]}...")
+        
+        # 检查是否已经回复过这条消息
+        cache_key = f"{sender_name}:{received_message[:50]}"
+        if cache_key in self._replied_cache:
+            self._add_log(f"已回复过该消息，跳过")
+            # 返回消息列表
+            self._current_action = "返回列表..."
+            await self._run_step_async("点击左上角返回按钮", 2)
+            return
         
         # 生成回复
         reply_content = self._generate_reply(received_message, sender_name)
@@ -511,6 +544,14 @@ class DouyinMessageMonitor:
         if send_success:
             self._messages_replied += 1
             self._add_log(f"✓ 回复完成 (总计: {self._messages_replied})")
+            # 记录到缓存，避免重复回复
+            cache_key = f"{sender_name}:{received_message[:50]}"
+            self._replied_cache[cache_key] = datetime.now().isoformat()
+            # 限制缓存大小
+            if len(self._replied_cache) > 500:
+                # 删除最早的记录
+                oldest_key = next(iter(self._replied_cache))
+                del self._replied_cache[oldest_key]
         
         # 记录历史
         self._add_history(
@@ -536,8 +577,16 @@ class DouyinMessageMonitor:
         prefixes = [
             "对方发的最后一条白色气泡消息内容是：",
             "对方发的最后一条白色气泡消息内容是:",
+            "对方发的最后一条白色气泡消息是：",
+            "对方发的最后一条白色气泡消息是:",
             "对方最后一条消息内容是：",
             "对方最后一条消息内容是:",
+            "对方最后一条消息是：",
+            "对方最后一条消息是:",
+            "最后一条白色气泡消息是：",
+            "最后一条白色气泡消息是:",
+            "白色气泡消息内容是：",
+            "白色气泡消息内容是:",
             "消息内容是：",
             "消息内容是:",
             "内容是：",
@@ -596,7 +645,127 @@ class DouyinMessageMonitor:
            (text.startswith('「') and text.endswith('」')):
             text = text[1:-1]
         
+        # 去掉 markdown 加粗标记 **
+        text = text.replace("**", "")
+        
         return text.strip() or "用户"
+
+    def _call_decision_model(self, prompt: str, ai_response: str) -> dict | None:
+        """调用决策模型解析 AI 返回结果.
+        
+        Args:
+            prompt: 解析提示词
+            ai_response: AutoGLM-Phone 返回的原始结果
+            
+        Returns:
+            解析后的 JSON 字典，失败返回 None
+        """
+        if not self._decision_model_enabled:
+            return None
+        
+        # 从全局配置获取决策模型设置
+        global_config = config_manager.get_effective_config()
+        base_url = global_config.decision_base_url
+        api_key = global_config.decision_api_key
+        model_name = global_config.decision_model_name
+        
+        if not base_url or not model_name:
+            self._add_log("决策模型未配置，请在设置中配置", "error")
+            return None
+        
+        try:
+            full_prompt = f"""{prompt}
+
+AI返回内容：
+{ai_response}
+
+请以JSON格式返回结果，不要包含其他内容。"""
+
+            resp = requests.post(
+                f"{base_url}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key or 'EMPTY'}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": model_name,
+                    "messages": [{"role": "user", "content": full_prompt}],
+                    "temperature": 0.1,
+                },
+                timeout=30
+            )
+            
+            if resp.status_code == 200:
+                data = resp.json()
+                content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                # 提取 JSON
+                json_match = re.search(r'\{[^{}]*\}', content, re.DOTALL)
+                if json_match:
+                    return json.loads(json_match.group())
+            
+            self._add_log(f"决策模型响应异常: {resp.status_code}", "error")
+            return None
+            
+        except json.JSONDecodeError as e:
+            self._add_log(f"决策模型返回格式错误: {e}", "error")
+            return None
+        except Exception as e:
+            self._add_log(f"决策模型调用失败: {e}", "error")
+            return None
+
+    def _parse_unread_check(self, ai_response: str) -> tuple[bool, str | None]:
+        """解析未读消息检查结果.
+        
+        Returns:
+            (has_unread, chat_name): 是否有未读消息，有未读的对话名称
+        """
+        if self._decision_model_enabled:
+            result = self._call_decision_model(
+                """分析以下内容，判断抖音私信列表中是否有未读消息。
+返回JSON格式：{"has_unread": true/false, "chat_name": "有未读消息的对话名称或null"}""",
+                ai_response
+            )
+            if result:
+                return result.get("has_unread", False), result.get("chat_name")
+        
+        # 降级到关键词匹配
+        # 先检查是否明确说没有
+        if "没有未读" in ai_response or "无未读" in ai_response or "没有对话" in ai_response:
+            return False, None
+        
+        # 再检查是否有未读
+        if "有未读私信" in ai_response or "有未读消息" in ai_response:
+            return True, None
+        
+        return False, None
+
+    def _parse_sender_name(self, ai_response: str) -> str:
+        """解析对方名字."""
+        if self._decision_model_enabled:
+            result = self._call_decision_model(
+                """从以下内容中提取对方的名字/昵称。
+返回JSON格式：{"name": "名字"}""",
+                ai_response
+            )
+            if result and result.get("name"):
+                return result["name"].replace("**", "").strip()
+        
+        # 降级到正则提取
+        return self._extract_name(ai_response)
+
+    def _parse_message_content(self, ai_response: str) -> str:
+        """解析消息内容."""
+        if self._decision_model_enabled:
+            result = self._call_decision_model(
+                """从以下内容中提取对方发送的消息内容（白色气泡中的文字）。
+返回JSON格式：{"message": "消息内容"}""",
+                ai_response
+            )
+            if result and result.get("message"):
+                return result["message"].replace("**", "").strip()
+        
+        # 降级到正则提取
+        return self._extract_message_content(ai_response)
 
     def _call_fastgpt(self, user_id: str, message: str) -> str | None:
         """调用 FastGPT API 获取回复."""
@@ -605,7 +774,7 @@ class DouyinMessageMonitor:
         
         try:
             chat_id = self._get_fastgpt_chat_id(user_id)
-            self._add_log(f"[FastGPT] 调用中... ChatID: {chat_id[:8]}...")
+            self._add_log(f"[FastGPT] 用户: {user_id}, ChatID: {chat_id[:8]}...")
             
             resp = requests.post(
                 self._fastgpt_base_url,

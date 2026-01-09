@@ -139,9 +139,12 @@ function DouyinAutoReplyComponent() {
 
   // 自动滚动日志到底部
   useEffect(() => {
-    const scrollContainer = logsEndRef.current?.parentElement;
-    if (scrollContainer) {
-      scrollContainer.scrollTop = scrollContainer.scrollHeight;
+    if (logsEndRef.current) {
+      // 找到 ScrollArea 的 viewport 并滚动
+      const viewport = logsEndRef.current.closest('[data-slot="scroll-area-viewport"]');
+      if (viewport) {
+        viewport.scrollTop = viewport.scrollHeight;
+      }
     }
   }, [logs]);
 
@@ -375,6 +378,21 @@ function DouyinAutoReplyComponent() {
               </p>
             </div>
 
+            {/* 决策模型开关 */}
+            <div className="pt-3 border-t space-y-2">
+              <div className="flex items-center gap-2">
+                <Switch
+                  checked={configForm.decision_model_enabled}
+                  onCheckedChange={(checked) => setConfigForm({ ...configForm, decision_model_enabled: checked })}
+                  disabled={isRunning}
+                />
+                <Label className="text-sm">启用决策模型解析</Label>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                使用决策模型（在设置中配置）解析 AI 返回结果，提高识别准确性
+              </p>
+            </div>
+
             {/* FastGPT 配置 */}
             <div className="pt-3 border-t space-y-3">
               <div className="flex items-center gap-2">
@@ -446,9 +464,9 @@ function DouyinAutoReplyComponent() {
         </Card>
 
         {/* 右侧：日志和历史 - 自适应宽度 */}
-        <Card className="flex-1 flex flex-col min-w-0">
-          <Tabs defaultValue="logs" className="flex-1 flex flex-col">
-            <CardHeader className="pb-0">
+        <Card className="flex-1 flex flex-col min-w-0 overflow-hidden">
+          <Tabs defaultValue="logs" className="flex-1 flex flex-col min-h-0">
+            <CardHeader className="pb-0 shrink-0">
               <TabsList>
                 <TabsTrigger value="logs" className="flex items-center gap-1">
                   <Activity className="h-4 w-4" />
@@ -460,19 +478,19 @@ function DouyinAutoReplyComponent() {
                 </TabsTrigger>
               </TabsList>
             </CardHeader>
-            <CardContent className="flex-1 pt-4 min-h-0">
-              <TabsContent value="logs" className="h-full m-0">
-                <div className="h-full flex flex-col">
+            <CardContent className="flex-1 pt-4 min-h-0 overflow-hidden">
+              <TabsContent value="logs" className="h-full m-0 overflow-hidden">
+                <div className="h-full flex flex-col overflow-hidden">
                   {/* 当前动作 */}
                   {status?.current_action && (
-                    <div className="mb-2 p-2 bg-blue-50 dark:bg-blue-950 rounded-lg flex items-center gap-2">
+                    <div className="mb-2 p-2 bg-blue-50 dark:bg-blue-950 rounded-lg flex items-center gap-2 shrink-0">
                       <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
                       <span className="text-sm text-blue-700 dark:text-blue-300">
                         {status.current_action}
                       </span>
                     </div>
                   )}
-                  <div className="flex-1 border rounded-lg overflow-auto">
+                  <ScrollArea className="flex-1 border rounded-lg min-h-0">
                     <div className="p-3 space-y-1 font-mono text-xs">
                       {logs.length === 0 ? (
                         <p className="text-muted-foreground text-center py-8">
@@ -487,13 +505,13 @@ function DouyinAutoReplyComponent() {
                             <span className="text-gray-400 shrink-0">
                               {new Date(log.timestamp).toLocaleTimeString()}
                             </span>
-                            <span>{log.message}</span>
+                            <span className="break-words">{log.message}</span>
                           </div>
                         ))
                       )}
                       <div ref={logsEndRef} />
                     </div>
-                  </div>
+                  </ScrollArea>
                 </div>
               </TabsContent>
               <TabsContent value="history" className="h-full m-0">
