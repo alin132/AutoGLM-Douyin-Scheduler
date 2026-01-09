@@ -67,7 +67,7 @@ class ScheduledTaskManager:
         self._file_cache: list[dict] | None = None
         self._file_mtime: float | None = None
         self._scheduler: AsyncIOScheduler | None = None
-        self._task_executor: Callable[[str, str, str, str], None] | None = None
+        self._task_executor: Callable[[str, str, str, str], str] | None = None
         self._running_tasks: set[str] = set()
 
     def set_task_executor(

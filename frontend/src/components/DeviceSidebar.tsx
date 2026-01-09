@@ -664,14 +664,6 @@ export function DeviceSidebar({
             <Plus className="h-4 w-4" />
             {t.deviceSidebar.addDevice}
           </Button>
-          <Button
-            variant="outline"
-            onClick={onOpenConfig}
-            className="w-full justify-start gap-2 rounded-full border-slate-200 dark:border-slate-700"
-          >
-            <Settings className="h-4 w-4" />
-            {t.deviceSidebar.settings}
-          </Button>
         </div>
 
         {/* Manual WiFi Connect Dialog */}

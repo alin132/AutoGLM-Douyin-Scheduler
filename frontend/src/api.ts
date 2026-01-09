@@ -1180,8 +1180,7 @@ export async function clearHistory(serialno: string): Promise<void> {
 
 // ==================== Scheduled Tasks API ====================
 
-export type ExecutionMode = 'classic' | 'dual_model' | 'layered_agent';
-export type ThinkingMode = 'fast' | 'deep' | 'turbo';
+export type ExecutionMode = 'classic' | 'layered_agent';
 
 export interface ScheduledTask {
   uuid: string;
@@ -1190,7 +1189,6 @@ export interface ScheduledTask {
   message: string;
   cron_expression: string;
   execution_mode: ExecutionMode;
-  thinking_mode: ThinkingMode;
   status: 'enabled' | 'disabled' | 'running';
   created_at: string;
   last_run: string | null;
@@ -1207,7 +1205,6 @@ export interface ScheduledTaskCreateRequest {
   message: string;
   cron_expression: string;
   execution_mode?: ExecutionMode;
-  thinking_mode?: ThinkingMode;
   enabled?: boolean;
 }
 
@@ -1217,7 +1214,6 @@ export interface ScheduledTaskUpdateRequest {
   message?: string;
   cron_expression?: string;
   execution_mode?: ExecutionMode;
-  thinking_mode?: ThinkingMode;
 }
 
 export interface TaskHistory {
@@ -1313,6 +1309,279 @@ export async function getAllTaskHistory(
   limit: number = 50
 ): Promise<TaskHistoryListResponse> {
   const res = await axios.get<TaskHistoryListResponse>('/api/task-history', {
+    params: { limit },
+  });
+  return res.data;
+}
+
+
+// ==================== Douyin Auto-Reply API ====================
+
+export interface DouyinReplyRule {
+  uuid: string;
+  name: string;
+  trigger_pattern: string;
+  trigger_type: 'keyword' | 'regex';
+  reply_message: string;
+  device_id: string;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DouyinReplyHistory {
+  uuid: string;
+  rule_uuid: string;
+  rule_name: string;
+  sender: string;
+  original_message: string;
+  reply_sent: string;
+  status: 'success' | 'failed';
+  timestamp: string;
+  error?: string;
+}
+
+export interface DouyinRuleCreateRequest {
+  name: string;
+  trigger_pattern: string;
+  trigger_type: 'keyword' | 'regex';
+  reply_message: string;
+  device_id: string;
+  enabled?: boolean;
+}
+
+export interface DouyinRuleUpdateRequest {
+  name?: string;
+  trigger_pattern?: string;
+  trigger_type?: 'keyword' | 'regex';
+  reply_message?: string;
+  device_id?: string;
+  enabled?: boolean;
+}
+
+export interface DouyinTestRuleResponse {
+  success: boolean;
+  matched: boolean;
+  reply?: string;
+  error?: string;
+}
+
+export async function listDouyinRules(): Promise<DouyinReplyRule[]> {
+  const res = await axios.get<DouyinReplyRule[]>('/api/douyin/rules');
+  return res.data;
+}
+
+export async function getDouyinRule(uuid: string): Promise<DouyinReplyRule> {
+  const res = await axios.get<DouyinReplyRule>(`/api/douyin/rules/${uuid}`);
+  return res.data;
+}
+
+export async function createDouyinRule(
+  request: DouyinRuleCreateRequest
+): Promise<DouyinReplyRule> {
+  const res = await axios.post<DouyinReplyRule>('/api/douyin/rules', request);
+  return res.data;
+}
+
+export async function updateDouyinRule(
+  uuid: string,
+  request: DouyinRuleUpdateRequest
+): Promise<DouyinReplyRule> {
+  const res = await axios.put<DouyinReplyRule>(
+    `/api/douyin/rules/${uuid}`,
+    request
+  );
+  return res.data;
+}
+
+export async function deleteDouyinRule(uuid: string): Promise<void> {
+  await axios.delete(`/api/douyin/rules/${uuid}`);
+}
+
+export async function enableDouyinRule(
+  uuid: string
+): Promise<DouyinReplyRule> {
+  const res = await axios.post<DouyinReplyRule>(
+    `/api/douyin/rules/${uuid}/enable`
+  );
+  return res.data;
+}
+
+export async function disableDouyinRule(
+  uuid: string
+): Promise<DouyinReplyRule> {
+  const res = await axios.post<DouyinReplyRule>(
+    `/api/douyin/rules/${uuid}/disable`
+  );
+  return res.data;
+}
+
+export async function testDouyinRule(
+  uuid: string,
+  testMessage: string
+): Promise<DouyinTestRuleResponse> {
+  const res = await axios.post<DouyinTestRuleResponse>(
+    `/api/douyin/rules/${uuid}/test`,
+    { test_message: testMessage }
+  );
+  return res.data;
+}
+
+export async function getDouyinReplyHistory(
+  limit: number = 50
+): Promise<DouyinReplyHistory[]> {
+  const res = await axios.get<DouyinReplyHistory[]>('/api/douyin/history', {
+    params: { limit },
+  });
+  return res.data;
+}
+
+export async function clearDouyinHistory(): Promise<void> {
+  await axios.delete('/api/douyin/history');
+}
+
+
+// ==================== Douyin Message Monitor API ====================
+
+export interface DouyinMonitorStatus {
+  status: 'stopped' | 'running' | 'paused' | 'checking' | 'replying';
+  device_id: string | null;
+  check_interval: number;
+  auto_reply_enabled: boolean;
+  reply_prompt_template: string;
+  decision_model_enabled: boolean;
+  decision_model_active: boolean;
+  fastgpt_enabled: boolean;
+  fastgpt_base_url: string;
+  fastgpt_api_key: string;
+  fastgpt_timeout: number;
+  current_action: string;
+  last_check_time: string | null;
+  messages_replied: number;
+}
+
+export interface DouyinMonitorConfig {
+  device_id: string | null;
+  check_interval: number;
+  auto_reply_enabled: boolean;
+  reply_prompt_template: string;
+  decision_model_enabled: boolean;
+  fastgpt_enabled: boolean;
+  fastgpt_base_url: string;
+  fastgpt_api_key: string;
+  fastgpt_timeout: number;
+}
+
+export interface DouyinMonitorConfigUpdate {
+  device_id?: string;
+  check_interval?: number;
+  auto_reply_enabled?: boolean;
+  reply_prompt_template?: string;
+  decision_model_enabled?: boolean;
+  fastgpt_enabled?: boolean;
+  fastgpt_base_url?: string;
+  fastgpt_api_key?: string;
+  fastgpt_timeout?: number;
+}
+
+export interface DouyinMonitorReplyHistory {
+  timestamp: string;
+  sender: string;
+  received_message: string;
+  reply_message: string;
+  success: boolean;
+  error?: string;
+}
+
+export interface DouyinMonitorLog {
+  timestamp: string;
+  level: string;
+  message: string;
+}
+
+export async function getDouyinMonitorStatus(): Promise<DouyinMonitorStatus> {
+  const res = await axios.get<DouyinMonitorStatus>('/api/douyin/monitor/status');
+  return res.data;
+}
+
+export async function getDouyinMonitorConfig(): Promise<DouyinMonitorConfig> {
+  const res = await axios.get<DouyinMonitorConfig>('/api/douyin/monitor/config');
+  return res.data;
+}
+
+export async function updateDouyinMonitorConfig(
+  config: DouyinMonitorConfigUpdate
+): Promise<DouyinMonitorConfig> {
+  const res = await axios.put<DouyinMonitorConfig>(
+    '/api/douyin/monitor/config',
+    config
+  );
+  return res.data;
+}
+
+export async function startDouyinMonitor(
+  deviceId?: string
+): Promise<{ success: boolean; message?: string; error?: string }> {
+  const res = await axios.post('/api/douyin/monitor/start', {
+    device_id: deviceId,
+  });
+  return res.data;
+}
+
+export async function stopDouyinMonitor(): Promise<{
+  success: boolean;
+  message?: string;
+  error?: string;
+}> {
+  const res = await axios.post('/api/douyin/monitor/stop');
+  return res.data;
+}
+
+export async function pauseDouyinMonitor(): Promise<{
+  success: boolean;
+  message?: string;
+  error?: string;
+}> {
+  const res = await axios.post('/api/douyin/monitor/pause');
+  return res.data;
+}
+
+export async function resumeDouyinMonitor(): Promise<{
+  success: boolean;
+  message?: string;
+  error?: string;
+}> {
+  const res = await axios.post('/api/douyin/monitor/resume');
+  return res.data;
+}
+
+export async function testDouyinMonitorOnce(): Promise<{
+  success: boolean;
+  result?: string;
+  error?: string;
+}> {
+  const res = await axios.post('/api/douyin/monitor/test');
+  return res.data;
+}
+
+export async function getDouyinMonitorHistory(
+  limit: number = 50
+): Promise<DouyinMonitorReplyHistory[]> {
+  const res = await axios.get<DouyinMonitorReplyHistory[]>(
+    '/api/douyin/monitor/history',
+    { params: { limit } }
+  );
+  return res.data;
+}
+
+export async function clearDouyinMonitorHistory(): Promise<void> {
+  await axios.delete('/api/douyin/monitor/history');
+}
+
+export async function getDouyinMonitorLogs(
+  limit: number = 50
+): Promise<DouyinMonitorLog[]> {
+  const res = await axios.get<DouyinMonitorLog[]>('/api/douyin/monitor/logs', {
     params: { limit },
   });
   return res.data;

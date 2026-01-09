@@ -1,4 +1,3 @@
-import React from 'react';
 import { Link, useMatchRoute } from '@tanstack/react-router';
 import {
   MessageSquare,
@@ -6,13 +5,9 @@ import {
   FileText,
   History,
   Clock,
+  MessageCircle,
   type LucideIcon,
 } from 'lucide-react';
-import {
-  Tooltip,
-  TooltipTrigger,
-  TooltipContent,
-} from '@/components/ui/tooltip';
 import { useTranslation } from '../lib/i18n-context';
 import logoImage from '@/assets/logo.png';
 
@@ -57,6 +52,12 @@ export function NavigationSidebar({ className }: NavigationSidebarProps) {
       path: '/scheduled-tasks',
     },
     {
+      id: 'douyin-auto-reply',
+      icon: MessageCircle,
+      label: t.navigation.douyinAutoReply || '抖音自动回复',
+      path: '/douyin-auto-reply',
+    },
+    {
       id: 'logs',
       icon: FileText,
       label: t.navigation.logs,
@@ -66,52 +67,43 @@ export function NavigationSidebar({ className }: NavigationSidebarProps) {
 
   return (
     <nav
-      className={`w-16 h-full flex flex-col bg-white dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800 ${className || ''}`}
+      className={`w-40 h-full flex flex-col bg-white dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800 ${className || ''}`}
     >
-      <div className="flex flex-col items-center py-4 gap-2">
-        {/* Logo at top - clickable to navigate to /chat */}
-        <div className="mb-4 pb-4 border-b border-slate-200 dark:border-slate-800 w-full flex justify-center">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Link to="/chat" className="block">
-                <img
-                  src={logoImage}
-                  alt="AutoGLM Logo"
-                  className="w-10 h-10 object-contain cursor-pointer hover:opacity-80 transition-opacity"
-                />
-              </Link>
-            </TooltipTrigger>
-            <TooltipContent side="right" sideOffset={8}>
-              返回首页
-            </TooltipContent>
-          </Tooltip>
+      <div className="flex flex-col py-4 gap-1">
+        {/* Logo at top */}
+        <div className="mb-4 pb-4 border-b border-slate-200 dark:border-slate-800 px-3">
+          <Link to="/chat" className="flex items-center gap-2">
+            <img
+              src={logoImage}
+              alt="AutoGLM Logo"
+              className="w-8 h-8 object-contain"
+            />
+            <span className="font-semibold text-slate-900 dark:text-slate-100">AutoGLM</span>
+          </Link>
         </div>
 
         {/* Navigation items */}
-        {navigationItems.map(item => {
-          const Icon = item.icon;
-          const isActive = matchRoute({ to: item.path });
+        <div className="px-2 space-y-1">
+          {navigationItems.map(item => {
+            const Icon = item.icon;
+            const isActive = matchRoute({ to: item.path });
 
-          return (
-            <Tooltip key={item.id}>
-              <TooltipTrigger asChild>
-                <Link
-                  to={item.path}
-                  className={`w-10 h-10 rounded-lg transition-all flex items-center justify-center ${
-                    isActive
-                      ? 'bg-[#1d9bf0]/10 text-[#1d9bf0] hover:bg-[#1d9bf0]/20'
-                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-                  }`}
-                >
-                  <Icon className="w-5 h-5" />
-                </Link>
-              </TooltipTrigger>
-              <TooltipContent side="right" sideOffset={8}>
-                {item.label}
-              </TooltipContent>
-            </Tooltip>
-          );
-        })}
+            return (
+              <Link
+                key={item.id}
+                to={item.path}
+                className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm ${
+                  isActive
+                    ? 'bg-[#1d9bf0]/10 text-[#1d9bf0] font-medium'
+                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+              >
+                <Icon className="w-4 h-4 shrink-0" />
+                <span className="truncate">{item.label}</span>
+              </Link>
+            );
+          })}
+        </div>
       </div>
     </nav>
   );

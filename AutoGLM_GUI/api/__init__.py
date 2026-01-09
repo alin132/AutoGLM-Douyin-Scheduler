@@ -19,6 +19,7 @@ from . import (
     agents,
     control,
     devices,
+    douyin_auto_reply,
     health,
     history,
     layered_agent,
@@ -88,20 +89,59 @@ def create_app() -> FastAPI:
         asyncio.create_task(qr_pairing_manager.cleanup_expired_sessions())
 
         from AutoGLM_GUI.device_manager import DeviceManager
-        from AutoGLM_GUI.scheduler_manager import scheduler_manager
+        from AutoGLM_GUI.phone_agent_manager import PhoneAgentManager
+        from AutoGLM_GUI.scheduled_task_manager import scheduled_task_manager
 
         device_manager = DeviceManager.get_instance()
         device_manager.start_polling()
 
-        # Start scheduled task scheduler
-        scheduler_manager.start()
+        # Set up task executor for scheduled tasks
+        def execute_scheduled_task(
+            task_uuid: str, device_id: str, message: str, execution_mode: str
+        ) -> str:
+            """Execute a scheduled task using PhoneAgentManager."""
+            from AutoGLM_GUI.logger import logger
+
+            logger.info(
+                f"Executing scheduled task {task_uuid}: "
+                f"device={device_id}, mode={execution_mode}"
+            )
+
+            manager = PhoneAgentManager.get_instance()
+
+            # Try to acquire the device
+            acquired = manager.acquire_device(
+                device_id,
+                timeout=0,
+                raise_on_timeout=False,
+                auto_initialize=True,
+            )
+
+            if not acquired:
+                raise RuntimeError(f"Device {device_id} is busy or unavailable")
+
+            try:
+                agent = manager.get_agent(device_id)
+                if agent is None:
+                    raise RuntimeError(f"Failed to get agent for device {device_id}")
+
+                agent.reset()
+                result = agent.run(message)
+                return result if result else "Task completed successfully"
+            finally:
+                manager.release_device(device_id)
+
+        scheduled_task_manager.set_task_executor(execute_scheduled_task)
+
+        # Start scheduled task scheduler (message-based)
+        scheduled_task_manager.start_scheduler()
 
         # Run MCP lifespan
         async with mcp_app.lifespan(app):
             yield
 
         # App shutdown
-        scheduler_manager.shutdown()
+        scheduled_task_manager.stop_scheduler()
 
     # Create FastAPI app with combined lifespan
     app = FastAPI(
@@ -127,6 +167,7 @@ def create_app() -> FastAPI:
     app.include_router(scheduled_tasks.router)
     app.include_router(version.router)
     app.include_router(workflows.router)
+    app.include_router(douyin_auto_reply.router, prefix="/api/douyin", tags=["douyin"])
 
     # Mount static files BEFORE MCP to ensure they have priority
     # This is critical: FastAPI processes mounts in order, so static files

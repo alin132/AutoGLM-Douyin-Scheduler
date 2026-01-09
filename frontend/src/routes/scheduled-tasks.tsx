@@ -75,16 +75,10 @@ function ScheduledTasksComponent() {
     device_id: '',
     message: '',
     cron_expression: '0 9 * * *',
-    execution_mode: 'classic' as 'classic' | 'dual_model' | 'layered_agent',
-    thinking_mode: 'deep' as 'fast' | 'deep' | 'turbo',
+    execution_mode: 'classic' as 'classic' | 'layered_agent',
     enabled: true,
   });
   const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    loadTasks();
-    loadDevices();
-  }, []);
 
   const loadTasks = async () => {
     try {
@@ -111,6 +105,12 @@ function ScheduledTasksComponent() {
     }
   };
 
+  useEffect(() => {
+    loadTasks();
+    loadDevices();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleCreate = () => {
     setEditingTask(null);
     setFormData({
@@ -119,7 +119,6 @@ function ScheduledTasksComponent() {
       message: '',
       cron_expression: '0 9 * * *',
       execution_mode: 'classic',
-      thinking_mode: 'deep',
       enabled: true,
     });
     setShowDialog(true);
@@ -133,7 +132,6 @@ function ScheduledTasksComponent() {
       message: task.message,
       cron_expression: task.cron_expression,
       execution_mode: task.execution_mode || 'classic',
-      thinking_mode: task.thinking_mode || 'deep',
       enabled: task.status === 'enabled',
     });
     setShowDialog(true);
@@ -149,7 +147,6 @@ function ScheduledTasksComponent() {
           message: formData.message,
           cron_expression: formData.cron_expression,
           execution_mode: formData.execution_mode,
-          thinking_mode: formData.thinking_mode,
         });
         toast({
           title: t.common.success,
@@ -159,7 +156,6 @@ function ScheduledTasksComponent() {
         await createScheduledTask({
           ...formData,
           execution_mode: formData.execution_mode,
-          thinking_mode: formData.thinking_mode,
         });
         toast({
           title: t.common.success,
@@ -229,13 +225,13 @@ function ScheduledTasksComponent() {
         title: t.common.success,
         description: t.scheduledTasks.taskStarted,
       });
-      
+
       // 轮询检查任务状态，直到任务完成
       const pollInterval = setInterval(async () => {
         try {
           const data = await listScheduledTasks();
           const task = data.tasks.find(t => t.uuid === uuid);
-          
+
           if (task && task.status !== 'running') {
             // 任务已完成，停止轮询并刷新列表
             clearInterval(pollInterval);
@@ -250,13 +246,12 @@ function ScheduledTasksComponent() {
           console.error('Failed to poll task status:', error);
         }
       }, 2000); // 每 2 秒检查一次
-      
+
       // 设置最大轮询时间（5分钟）
       setTimeout(() => {
         clearInterval(pollInterval);
         loadTasks(); // 最后刷新一次
       }, 300000);
-      
     } catch (error) {
       toast({
         title: t.common.error,
@@ -375,10 +370,7 @@ function ScheduledTasksComponent() {
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {tasks.map(task => (
-            <Card
-              key={task.uuid}
-              className="hover:shadow-md transition-shadow"
-            >
+            <Card key={task.uuid} className="hover:shadow-md transition-shadow">
               <CardHeader>
                 <div className="flex justify-between items-start">
                   <CardTitle className="text-lg">{task.name}</CardTitle>
@@ -396,16 +388,19 @@ function ScheduledTasksComponent() {
                   </div>
                   <div className="text-slate-600 dark:text-slate-400">
                     <strong>{t.scheduledTasks.executionMode}:</strong>{' '}
-                    {task.execution_mode === 'classic' && t.scheduledTasks.modeClassic}
-                    {task.execution_mode === 'dual_model' && t.scheduledTasks.modeDualModel}
-                    {task.execution_mode === 'layered_agent' && t.scheduledTasks.modeLayeredAgent}
+                    {task.execution_mode === 'classic' &&
+                      t.scheduledTasks.modeClassic}
+                    {task.execution_mode === 'layered_agent' &&
+                      t.scheduledTasks.modeLayeredAgent}
                     {!task.execution_mode && t.scheduledTasks.modeClassic}
                   </div>
                   <div className="text-slate-600 dark:text-slate-400">
-                    <strong>{t.scheduledTasks.nextRun}</strong> {formatDateTime(task.next_run)}
+                    <strong>{t.scheduledTasks.nextRun}</strong>{' '}
+                    {formatDateTime(task.next_run)}
                   </div>
                   <div className="text-slate-600 dark:text-slate-400">
-                    <strong>{t.scheduledTasks.lastRun}</strong> {formatDateTime(task.last_run)}
+                    <strong>{t.scheduledTasks.lastRun}</strong>{' '}
+                    {formatDateTime(task.last_run)}
                   </div>
                 </div>
                 <p className="text-sm text-slate-600 dark:text-slate-400 line-clamp-2">
@@ -475,7 +470,9 @@ function ScheduledTasksComponent() {
         <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              {editingTask ? t.scheduledTasks.editTask : t.scheduledTasks.createNew}
+              {editingTask
+                ? t.scheduledTasks.editTask
+                : t.scheduledTasks.createNew}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
@@ -511,54 +508,43 @@ function ScheduledTasksComponent() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="execution_mode">{t.scheduledTasks.executionMode}</Label>
+              <Label htmlFor="execution_mode">
+                {t.scheduledTasks.executionMode}
+              </Label>
               <Select
                 value={formData.execution_mode}
                 onValueChange={value =>
                   setFormData(prev => ({
                     ...prev,
-                    execution_mode: value as 'classic' | 'dual_model' | 'layered_agent',
+                    execution_mode: value as 'classic' | 'layered_agent',
                   }))
                 }
               >
                 <SelectTrigger>
-                  <SelectValue placeholder={t.scheduledTasks.selectExecutionMode} />
+                  <span>
+                    {formData.execution_mode === 'classic'
+                      ? t.scheduledTasks.modeClassic
+                      : formData.execution_mode === 'layered_agent'
+                        ? t.scheduledTasks.modeLayeredAgent
+                        : t.scheduledTasks.selectExecutionMode}
+                  </span>
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="classic">{t.scheduledTasks.modeClassic}</SelectItem>
-                  <SelectItem value="dual_model">{t.scheduledTasks.modeDualModel}</SelectItem>
-                  <SelectItem value="layered_agent">{t.scheduledTasks.modeLayeredAgent}</SelectItem>
+                  <SelectItem value="classic">
+                    {t.scheduledTasks.modeClassic}
+                  </SelectItem>
+                  <SelectItem value="layered_agent">
+                    {t.scheduledTasks.modeLayeredAgent}
+                  </SelectItem>
                 </SelectContent>
               </Select>
               <p className="text-xs text-slate-500">
-                {formData.execution_mode === 'classic' && t.scheduledTasks.modeClassicDesc}
-                {formData.execution_mode === 'dual_model' && t.scheduledTasks.modeDualModelDesc}
-                {formData.execution_mode === 'layered_agent' && t.scheduledTasks.modeLayeredAgentDesc}
+                {formData.execution_mode === 'classic' &&
+                  t.scheduledTasks.modeClassicDesc}
+                {formData.execution_mode === 'layered_agent' &&
+                  t.scheduledTasks.modeLayeredAgentDesc}
               </p>
             </div>
-            {formData.execution_mode === 'dual_model' && (
-              <div className="space-y-2">
-                <Label htmlFor="thinking_mode">{t.scheduledTasks.thinkingMode}</Label>
-                <Select
-                  value={formData.thinking_mode}
-                  onValueChange={value =>
-                    setFormData(prev => ({
-                      ...prev,
-                      thinking_mode: value as 'fast' | 'deep' | 'turbo',
-                    }))
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder={t.scheduledTasks.selectThinkingMode} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="fast">{t.scheduledTasks.thinkingFast}</SelectItem>
-                    <SelectItem value="deep">{t.scheduledTasks.thinkingDeep}</SelectItem>
-                    <SelectItem value="turbo">{t.scheduledTasks.thinkingTurbo}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
             <div className="space-y-2">
               <Label htmlFor="cron">{t.scheduledTasks.cronExpression}</Label>
               <Input
@@ -673,9 +659,12 @@ function ScheduledTasksComponent() {
                                   : 'destructive'
                               }
                             >
-                              {history.status === 'success' && t.scheduledTasks.success}
-                              {history.status === 'failed' && t.scheduledTasks.failed}
-                              {history.status === 'aborted' && t.scheduledTasks.aborted}
+                              {history.status === 'success' &&
+                                t.scheduledTasks.success}
+                              {history.status === 'failed' &&
+                                t.scheduledTasks.failed}
+                              {history.status === 'aborted' &&
+                                t.scheduledTasks.aborted}
                             </Badge>
                           </div>
                           {history.error && (
