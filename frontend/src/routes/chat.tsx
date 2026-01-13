@@ -17,10 +17,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import {
-  Layers,
-  Sparkles,
-} from 'lucide-react';
+import { Layers, Sparkles } from 'lucide-react';
 import { useTranslation } from '../lib/i18n-context';
 
 // Search params type for URL persistence
@@ -67,9 +64,11 @@ function ChatComponent() {
   // 检查是否已配置
   const [isConfigured, setIsConfigured] = useState(false);
   useEffect(() => {
-    getConfig().then(data => {
-      setIsConfigured(!!data.base_url);
-    }).catch(() => setIsConfigured(false));
+    getConfig()
+      .then(data => {
+        setIsConfigured(!!data.base_url);
+      })
+      .catch(() => setIsConfigured(false));
   }, []);
 
   const loadDevices = useCallback(async () => {

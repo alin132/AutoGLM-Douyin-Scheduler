@@ -20,6 +20,7 @@ from . import (
     control,
     devices,
     douyin_auto_reply,
+    douyin_comment_tasks,
     health,
     history,
     layered_agent,
@@ -91,6 +92,7 @@ def create_app() -> FastAPI:
         from AutoGLM_GUI.device_manager import DeviceManager
         from AutoGLM_GUI.phone_agent_manager import PhoneAgentManager
         from AutoGLM_GUI.scheduled_task_manager import scheduled_task_manager
+        from AutoGLM_GUI.douyin.comment_task_manager import douyin_comment_task_manager
 
         device_manager = DeviceManager.get_instance()
         device_manager.start_polling()
@@ -136,12 +138,56 @@ def create_app() -> FastAPI:
         # Start scheduled task scheduler (message-based)
         scheduled_task_manager.start_scheduler()
 
+        # Set up executor for douyin comment tasks
+        def execute_douyin_comment_task(
+            task_uuid: str, device_id: str, prompt: str
+        ) -> str:
+            """Execute a douyin comment task using PhoneAgentManager."""
+            from AutoGLM_GUI.config_manager import config_manager
+            from AutoGLM_GUI.logger import logger
+
+            # 从全局配置获取最大步数
+            effective_config = config_manager.get_effective_config()
+            max_steps = effective_config.default_max_steps
+            logger.info(f"Executing douyin comment task {task_uuid}: device={device_id}, max_steps={max_steps}")
+
+            manager = PhoneAgentManager.get_instance()
+
+            # 尝试获取设备锁，等待最多 5 秒
+            acquired = manager.acquire_device(
+                device_id,
+                timeout=5,  # 等待 5 秒
+                raise_on_timeout=False,
+                auto_initialize=True,
+            )
+
+            if not acquired:
+                raise RuntimeError(f"Device {device_id} is busy (可能正在被聊天界面使用，请先关闭聊天或等待完成)")
+
+            try:
+                agent = manager.get_agent(device_id)
+                if agent is None:
+                    raise RuntimeError(f"Failed to get agent for device {device_id}")
+
+                # 设置最大步数
+                agent.agent_config.max_steps = max_steps
+                
+                agent.reset()
+                result = agent.run(prompt)
+                return result if result else "Task completed successfully"
+            finally:
+                manager.release_device(device_id)
+
+        douyin_comment_task_manager.set_task_executor(execute_douyin_comment_task)
+        douyin_comment_task_manager.start_scheduler()
+
         # Run MCP lifespan
         async with mcp_app.lifespan(app):
             yield
 
         # App shutdown
         scheduled_task_manager.stop_scheduler()
+        douyin_comment_task_manager.stop_scheduler()
 
     # Create FastAPI app with combined lifespan
     app = FastAPI(
@@ -168,6 +214,7 @@ def create_app() -> FastAPI:
     app.include_router(version.router)
     app.include_router(workflows.router)
     app.include_router(douyin_auto_reply.router, prefix="/api/douyin", tags=["douyin"])
+    app.include_router(douyin_comment_tasks.router, prefix="/api/douyin/comment", tags=["douyin-comment"])
 
     # Mount static files BEFORE MCP to ensure they have priority
     # This is critical: FastAPI processes mounts in order, so static files

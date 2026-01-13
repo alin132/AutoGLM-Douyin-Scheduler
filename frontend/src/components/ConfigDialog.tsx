@@ -3,7 +3,6 @@ import { useState, useEffect } from 'react';
 import {
   getConfig,
   saveConfig,
-  reinitAllAgents,
   getErrorMessage,
   type ConfigSaveRequest,
 } from '../api';
@@ -110,10 +109,17 @@ const DECISION_PRESETS = [
 interface ConfigDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onToast?: (message: string, type: 'success' | 'error' | 'warning' | 'info') => void;
+  onToast?: (
+    message: string,
+    type: 'success' | 'error' | 'warning' | 'info'
+  ) => void;
 }
 
-export function ConfigDialog({ open, onOpenChange, onToast }: ConfigDialogProps) {
+export function ConfigDialog({
+  open,
+  onOpenChange,
+  onToast,
+}: ConfigDialogProps) {
   const t = useTranslation();
   const [config, setConfig] = useState<ConfigSaveRequest | null>(null);
   const [showApiKey, setShowApiKey] = useState(false);
@@ -133,7 +139,7 @@ export function ConfigDialog({ open, onOpenChange, onToast }: ConfigDialogProps)
 
   useEffect(() => {
     if (!open) return;
-    
+
     const loadConfiguration = async () => {
       try {
         const data = await getConfig();
@@ -150,8 +156,12 @@ export function ConfigDialog({ open, onOpenChange, onToast }: ConfigDialogProps)
         });
         const useDefault = !data.base_url;
         setTempConfig({
-          base_url: useDefault ? VISION_PRESETS[0].config.base_url : data.base_url,
-          model_name: useDefault ? VISION_PRESETS[0].config.model_name : data.model_name,
+          base_url: useDefault
+            ? VISION_PRESETS[0].config.base_url
+            : data.base_url,
+          model_name: useDefault
+            ? VISION_PRESETS[0].config.model_name
+            : data.model_name,
           api_key: data.api_key || '',
           agent_type: data.agent_type || 'glm',
           agent_config_params: data.agent_config_params || {},
@@ -207,29 +217,8 @@ export function ConfigDialog({ open, onOpenChange, onToast }: ConfigDialogProps)
 
       showToast(t.toasts.configSaved, 'success');
 
-      try {
-        const reinitResult = await reinitAllAgents();
-        if (reinitResult.total === 0) {
-          console.log('No agents to reinitialize');
-        } else if (reinitResult.success) {
-          showToast(
-            `Configuration applied to ${reinitResult.succeeded.length} device(s)`,
-            'success'
-          );
-        } else {
-          const failedCount = Object.keys(reinitResult.failed).length;
-          showToast(
-            `Configuration partially applied: ${reinitResult.succeeded.length}/${reinitResult.total} succeeded, ${failedCount} failed`,
-            'warning'
-          );
-        }
-      } catch (reinitError) {
-        console.error('Failed to reinitialize agents:', reinitError);
-        showToast(
-          'Configuration saved, but failed to update devices.',
-          'warning'
-        );
-      }
+      // 配置保存时后端会自动销毁所有 Agent，下次使用时会用新配置重新初始化
+      // 不再需要调用 reinitAllAgents
 
       onOpenChange(false);
     } catch (err) {
@@ -262,9 +251,14 @@ export function ConfigDialog({ open, onOpenChange, onToast }: ConfigDialogProps)
           </TabsList>
 
           {/* 视觉模型 Tab */}
-          <TabsContent value="vision" className="space-y-4 mt-4 overflow-y-auto flex-1 min-h-0">
+          <TabsContent
+            value="vision"
+            className="space-y-4 mt-4 overflow-y-auto flex-1 min-h-0"
+          >
             <div className="space-y-2">
-              <Label className="text-sm font-medium">{t.chat.selectPreset}</Label>
+              <Label className="text-sm font-medium">
+                {t.chat.selectPreset}
+              </Label>
               <div className="grid grid-cols-1 gap-2">
                 {VISION_PRESETS.map(preset => (
                   <div key={preset.name} className="relative">
@@ -288,17 +282,26 @@ export function ConfigDialog({ open, onOpenChange, onToast }: ConfigDialogProps)
                         <Server
                           className={`w-4 h-4 ${
                             tempConfig.base_url === preset.config.base_url &&
-                            (preset.name !== 'custom' || tempConfig.base_url === '')
+                            (preset.name !== 'custom' ||
+                              tempConfig.base_url === '')
                               ? 'text-[#1d9bf0]'
                               : 'text-slate-400 dark:text-slate-500'
                           }`}
                         />
                         <span className="font-medium text-sm text-slate-900 dark:text-slate-100">
-                          {t.presetConfigs[preset.name as keyof typeof t.presetConfigs].name}
+                          {
+                            t.presetConfigs[
+                              preset.name as keyof typeof t.presetConfigs
+                            ].name
+                          }
                         </span>
                       </div>
                       <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 ml-6">
-                        {t.presetConfigs[preset.name as keyof typeof t.presetConfigs].description}
+                        {
+                          t.presetConfigs[
+                            preset.name as keyof typeof t.presetConfigs
+                          ].description
+                        }
                       </p>
                     </button>
                     {'apiKeyUrl' in preset && (
@@ -323,7 +326,9 @@ export function ConfigDialog({ open, onOpenChange, onToast }: ConfigDialogProps)
               <Input
                 id="base_url"
                 value={tempConfig.base_url}
-                onChange={e => setTempConfig({ ...tempConfig, base_url: e.target.value })}
+                onChange={e =>
+                  setTempConfig({ ...tempConfig, base_url: e.target.value })
+                }
                 placeholder="http://localhost:8080/v1"
               />
               {!tempConfig.base_url && (
@@ -341,7 +346,9 @@ export function ConfigDialog({ open, onOpenChange, onToast }: ConfigDialogProps)
                   id="api_key"
                   type={showApiKey ? 'text' : 'password'}
                   value={tempConfig.api_key}
-                  onChange={e => setTempConfig({ ...tempConfig, api_key: e.target.value })}
+                  onChange={e =>
+                    setTempConfig({ ...tempConfig, api_key: e.target.value })
+                  }
                   placeholder="Leave empty if not required"
                   className="pr-10"
                 />
@@ -366,13 +373,17 @@ export function ConfigDialog({ open, onOpenChange, onToast }: ConfigDialogProps)
               <Input
                 id="model_name"
                 value={tempConfig.model_name}
-                onChange={e => setTempConfig({ ...tempConfig, model_name: e.target.value })}
+                onChange={e =>
+                  setTempConfig({ ...tempConfig, model_name: e.target.value })
+                }
                 placeholder="autoglm-phone-9b"
               />
             </div>
 
             <div className="space-y-2">
-              <Label className="text-sm font-medium">{t.chat.agentType || 'Agent 类型'}</Label>
+              <Label className="text-sm font-medium">
+                {t.chat.agentType || 'Agent 类型'}
+              </Label>
               <div className="grid grid-cols-2 gap-2">
                 {AGENT_PRESETS.map(preset => (
                   <button
@@ -425,18 +436,27 @@ export function ConfigDialog({ open, onOpenChange, onToast }: ConfigDialogProps)
 
             {tempConfig.agent_type === 'mai' && (
               <div className="space-y-2">
-                <Label htmlFor="history_n">{t.chat.history_n || '历史记录数量'}</Label>
+                <Label htmlFor="history_n">
+                  {t.chat.history_n || '历史记录数量'}
+                </Label>
                 <Input
                   id="history_n"
                   type="number"
                   min={1}
                   max={10}
-                  value={(tempConfig.agent_config_params?.history_n as number | undefined) || 3}
+                  value={
+                    (tempConfig.agent_config_params?.history_n as
+                      | number
+                      | undefined) || 3
+                  }
                   onChange={e => {
                     const value = parseInt(e.target.value) || 3;
                     setTempConfig(prev => ({
                       ...prev,
-                      agent_config_params: { ...prev.agent_config_params, history_n: value },
+                      agent_config_params: {
+                        ...prev.agent_config_params,
+                        history_n: value,
+                      },
                     }));
                   }}
                   className="w-full"
@@ -448,7 +468,9 @@ export function ConfigDialog({ open, onOpenChange, onToast }: ConfigDialogProps)
             )}
 
             <div className="space-y-2">
-              <Label htmlFor="default_max_steps">{t.chat.maxSteps || '最大执行步数'}</Label>
+              <Label htmlFor="default_max_steps">
+                {t.chat.maxSteps || '最大执行步数'}
+              </Label>
               <Input
                 id="default_max_steps"
                 type="number"
@@ -471,7 +493,10 @@ export function ConfigDialog({ open, onOpenChange, onToast }: ConfigDialogProps)
           </TabsContent>
 
           {/* 决策模型 Tab */}
-          <TabsContent value="decision" className="space-y-4 mt-4 overflow-y-auto flex-1 min-h-0">
+          <TabsContent
+            value="decision"
+            className="space-y-4 mt-4 overflow-y-auto flex-1 min-h-0"
+          >
             <div className="rounded-lg border border-indigo-200 bg-indigo-50 dark:border-indigo-900 dark:bg-indigo-950/30 p-3 text-sm text-indigo-900 dark:text-indigo-100">
               <div className="flex items-start gap-2">
                 <Info className="mt-0.5 h-4 w-4 flex-shrink-0" />
@@ -480,7 +505,9 @@ export function ConfigDialog({ open, onOpenChange, onToast }: ConfigDialogProps)
             </div>
 
             <div className="space-y-2">
-              <Label className="text-sm font-medium">{t.chat.selectDecisionPreset}</Label>
+              <Label className="text-sm font-medium">
+                {t.chat.selectDecisionPreset}
+              </Label>
               <div className="grid grid-cols-1 gap-2">
                 {DECISION_PRESETS.map(preset => (
                   <div key={preset.name} className="relative">
@@ -490,12 +517,15 @@ export function ConfigDialog({ open, onOpenChange, onToast }: ConfigDialogProps)
                         setTempConfig(prev => ({
                           ...prev,
                           decision_base_url: preset.config.decision_base_url,
-                          decision_model_name: preset.config.decision_model_name,
+                          decision_model_name:
+                            preset.config.decision_model_name,
                         }))
                       }
                       className={`w-full text-left p-3 rounded-lg border transition-all ${
-                        tempConfig.decision_base_url === preset.config.decision_base_url &&
-                        (preset.name !== 'custom' || tempConfig.decision_base_url === '')
+                        tempConfig.decision_base_url ===
+                          preset.config.decision_base_url &&
+                        (preset.name !== 'custom' ||
+                          tempConfig.decision_base_url === '')
                           ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950/50'
                           : 'border-slate-200 dark:border-slate-700 hover:border-indigo-500/50 hover:bg-indigo-50 dark:hover:bg-indigo-950/30'
                       }`}
@@ -503,18 +533,28 @@ export function ConfigDialog({ open, onOpenChange, onToast }: ConfigDialogProps)
                       <div className="flex items-center gap-2">
                         <Server
                           className={`w-4 h-4 ${
-                            tempConfig.decision_base_url === preset.config.decision_base_url &&
-                            (preset.name !== 'custom' || tempConfig.decision_base_url === '')
+                            tempConfig.decision_base_url ===
+                              preset.config.decision_base_url &&
+                            (preset.name !== 'custom' ||
+                              tempConfig.decision_base_url === '')
                               ? 'text-indigo-600 dark:text-indigo-400'
                               : 'text-slate-400 dark:text-slate-500'
                           }`}
                         />
                         <span className="font-medium text-sm text-slate-900 dark:text-slate-100">
-                          {t.presetConfigs[preset.name as keyof typeof t.presetConfigs].name}
+                          {
+                            t.presetConfigs[
+                              preset.name as keyof typeof t.presetConfigs
+                            ].name
+                          }
                         </span>
                       </div>
                       <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 ml-6">
-                        {t.presetConfigs[preset.name as keyof typeof t.presetConfigs].description}
+                        {
+                          t.presetConfigs[
+                            preset.name as keyof typeof t.presetConfigs
+                          ].description
+                        }
                       </p>
                     </button>
                     {'apiKeyUrl' in preset && (
@@ -535,11 +575,18 @@ export function ConfigDialog({ open, onOpenChange, onToast }: ConfigDialogProps)
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="decision_base_url">{t.chat.decisionBaseUrl} *</Label>
+              <Label htmlFor="decision_base_url">
+                {t.chat.decisionBaseUrl} *
+              </Label>
               <Input
                 id="decision_base_url"
                 value={tempConfig.decision_base_url}
-                onChange={e => setTempConfig({ ...tempConfig, decision_base_url: e.target.value })}
+                onChange={e =>
+                  setTempConfig({
+                    ...tempConfig,
+                    decision_base_url: e.target.value,
+                  })
+                }
                 placeholder="http://localhost:8080/v1"
               />
             </div>
@@ -551,7 +598,12 @@ export function ConfigDialog({ open, onOpenChange, onToast }: ConfigDialogProps)
                   id="decision_api_key"
                   type={showApiKey ? 'text' : 'password'}
                   value={tempConfig.decision_api_key}
-                  onChange={e => setTempConfig({ ...tempConfig, decision_api_key: e.target.value })}
+                  onChange={e =>
+                    setTempConfig({
+                      ...tempConfig,
+                      decision_api_key: e.target.value,
+                    })
+                  }
                   placeholder="sk-..."
                   className="pr-10"
                 />
@@ -572,11 +624,18 @@ export function ConfigDialog({ open, onOpenChange, onToast }: ConfigDialogProps)
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="decision_model_name">{t.chat.decisionModelName} *</Label>
+              <Label htmlFor="decision_model_name">
+                {t.chat.decisionModelName} *
+              </Label>
               <Input
                 id="decision_model_name"
                 value={tempConfig.decision_model_name}
-                onChange={e => setTempConfig({ ...tempConfig, decision_model_name: e.target.value })}
+                onChange={e =>
+                  setTempConfig({
+                    ...tempConfig,
+                    decision_model_name: e.target.value,
+                  })
+                }
                 placeholder=""
               />
             </div>
@@ -597,7 +656,8 @@ export function ConfigDialog({ open, onOpenChange, onToast }: ConfigDialogProps)
                   agent_config_params: config.agent_config_params || {},
                   default_max_steps: config.default_max_steps || 100,
                   decision_base_url: config.decision_base_url || '',
-                  decision_model_name: config.decision_model_name || 'glm-4v-plus',
+                  decision_model_name:
+                    config.decision_model_name || 'glm-4v-plus',
                   decision_api_key: config.decision_api_key || '',
                 });
               }

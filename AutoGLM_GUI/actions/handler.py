@@ -116,16 +116,17 @@ class ActionHandler:
         text = action.get("text", "")
 
         original_ime = self.device.detect_and_set_adb_keyboard()
-        time.sleep(0.5)
+        time.sleep(0.2)
 
-        self.device.clear_text()
-        time.sleep(0.3)
+        # 注意：移除了 clear_text 操作
+        # 原因：某些 App（如抖音）的弹出输入框在执行 clear_text 时会关闭
 
         self.device.type_text(text)
-        time.sleep(0.5)
+        time.sleep(0.2)
 
-        self.device.restore_keyboard(original_ime)
-        time.sleep(0.3)
+        # 注意：暂时不恢复键盘，避免输入法切换导致弹窗关闭
+        # 键盘会在下次输入时自动处理
+        # self.device.restore_keyboard(original_ime)
 
         return ActionResult(True, False)
 

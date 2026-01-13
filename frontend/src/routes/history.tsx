@@ -202,7 +202,8 @@ function HistoryComponent() {
             <SelectTrigger className="w-[200px]">
               <span className="truncate">
                 {selectedSerial
-                  ? devices.find(d => d.serial === selectedSerial)?.model || selectedSerial
+                  ? devices.find(d => d.serial === selectedSerial)?.model ||
+                    selectedSerial
                   : t.historyPage.selectDevice}
               </span>
             </SelectTrigger>

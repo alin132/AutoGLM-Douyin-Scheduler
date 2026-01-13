@@ -6,6 +6,7 @@ import {
   History,
   Clock,
   MessageCircle,
+  MessagesSquare,
   type LucideIcon,
 } from 'lucide-react';
 import { useTranslation } from '../lib/i18n-context';
@@ -58,6 +59,12 @@ export function NavigationSidebar({ className }: NavigationSidebarProps) {
       path: '/douyin-auto-reply',
     },
     {
+      id: 'douyin-comment',
+      icon: MessagesSquare,
+      label: t.navigation.douyinComment || '抖音评论引流',
+      path: '/douyin-comment',
+    },
+    {
       id: 'logs',
       icon: FileText,
       label: t.navigation.logs,
@@ -78,7 +85,9 @@ export function NavigationSidebar({ className }: NavigationSidebarProps) {
               alt="AutoGLM Logo"
               className="w-8 h-8 object-contain"
             />
-            <span className="font-semibold text-slate-900 dark:text-slate-100">AutoGLM</span>
+            <span className="font-semibold text-slate-900 dark:text-slate-100">
+              AutoGLM
+            </span>
           </Link>
         </div>
 

@@ -419,6 +419,35 @@ class PhoneAgentManager:
 
             logger.debug(f"Device lock released for {device_id}")
 
+    def force_release_device(self, device_id: str) -> bool:
+        """
+        强制释放设备锁（用于恢复卡住的设备）.
+        
+        注意：这会创建一个新的锁对象，旧的锁会被丢弃。
+        只在设备确实卡住时使用。
+
+        Args:
+            device_id: Device identifier
+            
+        Returns:
+            bool: True if lock was reset
+        """
+        with self._manager_lock:
+            # 创建新的锁对象替换旧的
+            self._device_locks[device_id] = threading.Lock()
+            
+            # 更新状态
+            if device_id in self._metadata:
+                self._metadata[device_id].state = AgentState.IDLE
+
+        logger.warning(f"Force released device lock for {device_id}")
+        return True
+
+    def is_device_busy(self, device_id: str) -> bool:
+        """检查设备是否被占用."""
+        lock = self._get_device_lock(device_id)
+        return lock.locked()
+
     @contextmanager
     def use_agent(
         self,

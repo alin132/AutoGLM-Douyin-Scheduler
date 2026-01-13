@@ -100,6 +100,41 @@ def list_devices() -> DeviceListResponse:
     return DeviceListResponse(devices=devices_with_agents)
 
 
+@router.post("/api/devices/{device_id}/force_release")
+def force_release_device(device_id: str) -> dict:
+    """强制释放设备锁（用于恢复卡住的设备）."""
+    from AutoGLM_GUI.phone_agent_manager import PhoneAgentManager
+
+    manager = PhoneAgentManager.get_instance()
+    
+    # 检查设备是否被占用
+    is_busy = manager.is_device_busy(device_id)
+    
+    if is_busy:
+        manager.force_release_device(device_id)
+        return {"success": True, "message": f"设备 {device_id} 锁已强制释放"}
+    else:
+        return {"success": True, "message": f"设备 {device_id} 未被占用"}
+
+
+@router.get("/api/devices/{device_id}/status")
+def get_device_status(device_id: str) -> dict:
+    """获取设备状态."""
+    from AutoGLM_GUI.phone_agent_manager import PhoneAgentManager
+
+    manager = PhoneAgentManager.get_instance()
+    
+    is_busy = manager.is_device_busy(device_id)
+    metadata = manager.get_metadata(device_id)
+    
+    return {
+        "device_id": device_id,
+        "is_busy": is_busy,
+        "state": metadata.state if metadata else None,
+        "initialized": manager.is_initialized(device_id),
+    }
+
+
 @router.post("/api/devices/connect_wifi", response_model=WiFiConnectResponse)
 def connect_wifi(request: WiFiConnectRequest) -> WiFiConnectResponse:
     from AutoGLM_GUI.device_manager import DeviceManager

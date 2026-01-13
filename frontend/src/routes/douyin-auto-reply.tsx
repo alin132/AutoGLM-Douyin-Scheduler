@@ -108,12 +108,13 @@ function DouyinAutoReplyComponent() {
   const loadInitialData = useCallback(async () => {
     try {
       setLoading(true);
-      const [statusData, devicesData, logsData, historyData] = await Promise.all([
-        getDouyinMonitorStatus(),
-        getDevices(),
-        getDouyinMonitorLogs(50),
-        getDouyinMonitorHistory(20),
-      ]);
+      const [statusData, devicesData, logsData, historyData] =
+        await Promise.all([
+          getDouyinMonitorStatus(),
+          getDevices(),
+          getDouyinMonitorLogs(50),
+          getDouyinMonitorHistory(20),
+        ]);
       setStatus(statusData);
       setDevices(devicesData);
       setLogs(logsData);
@@ -157,7 +158,9 @@ function DouyinAutoReplyComponent() {
   // 自动滚动日志到底部
   useEffect(() => {
     if (logsEndRef.current) {
-      const viewport = logsEndRef.current.closest('[data-slot="scroll-area-viewport"]');
+      const viewport = logsEndRef.current.closest(
+        '[data-slot="scroll-area-viewport"]'
+      );
       if (viewport) {
         viewport.scrollTop = viewport.scrollHeight;
       }
@@ -198,10 +201,18 @@ function DouyinAutoReplyComponent() {
         toast({ title: '监控已启动' });
         loadStatus();
       } else {
-        toast({ title: '启动失败', description: result.error, variant: 'destructive' });
+        toast({
+          title: '启动失败',
+          description: result.error,
+          variant: 'destructive',
+        });
       }
     } catch (error) {
-      toast({ title: '错误', description: getErrorMessage(error), variant: 'destructive' });
+      toast({
+        title: '错误',
+        description: getErrorMessage(error),
+        variant: 'destructive',
+      });
     } finally {
       setActionLoading(false);
     }
@@ -214,7 +225,11 @@ function DouyinAutoReplyComponent() {
       toast({ title: '监控已停止' });
       loadStatus();
     } catch (error) {
-      toast({ title: '错误', description: getErrorMessage(error), variant: 'destructive' });
+      toast({
+        title: '错误',
+        description: getErrorMessage(error),
+        variant: 'destructive',
+      });
     } finally {
       setActionLoading(false);
     }
@@ -225,7 +240,11 @@ function DouyinAutoReplyComponent() {
       await pauseDouyinMonitor();
       loadStatus();
     } catch (error) {
-      toast({ title: '错误', description: getErrorMessage(error), variant: 'destructive' });
+      toast({
+        title: '错误',
+        description: getErrorMessage(error),
+        variant: 'destructive',
+      });
     }
   };
 
@@ -234,13 +253,21 @@ function DouyinAutoReplyComponent() {
       await resumeDouyinMonitor();
       loadStatus();
     } catch (error) {
-      toast({ title: '错误', description: getErrorMessage(error), variant: 'destructive' });
+      toast({
+        title: '错误',
+        description: getErrorMessage(error),
+        variant: 'destructive',
+      });
     }
   };
 
   const handleTest = async () => {
     if (!configForm.device_id) {
-      toast({ title: '错误', description: '请先选择设备', variant: 'destructive' });
+      toast({
+        title: '错误',
+        description: '请先选择设备',
+        variant: 'destructive',
+      });
       return;
     }
     setActionLoading(true);
@@ -250,10 +277,18 @@ function DouyinAutoReplyComponent() {
       if (result.success) {
         toast({ title: '测试已启动' });
       } else {
-        toast({ title: '测试失败', description: result.error, variant: 'destructive' });
+        toast({
+          title: '测试失败',
+          description: result.error,
+          variant: 'destructive',
+        });
       }
     } catch (error) {
-      toast({ title: '错误', description: getErrorMessage(error), variant: 'destructive' });
+      toast({
+        title: '错误',
+        description: getErrorMessage(error),
+        variant: 'destructive',
+      });
     } finally {
       setActionLoading(false);
       loadStatus();
@@ -265,12 +300,17 @@ function DouyinAutoReplyComponent() {
       await updateDouyinMonitorConfig(configForm);
       toast({ title: '配置已保存' });
     } catch (error) {
-      toast({ title: '错误', description: getErrorMessage(error), variant: 'destructive' });
+      toast({
+        title: '错误',
+        description: getErrorMessage(error),
+        variant: 'destructive',
+      });
     }
   };
 
   const getStatusInfo = () => {
-    if (!status) return { color: 'bg-gray-500', text: '未知', icon: AlertCircle };
+    if (!status)
+      return { color: 'bg-gray-500', text: '未知', icon: AlertCircle };
     switch (status.status) {
       case 'running':
         return { color: 'bg-green-500', text: '运行中', icon: Activity };
@@ -288,7 +328,6 @@ function DouyinAutoReplyComponent() {
   const statusInfo = getStatusInfo();
   const isRunning = status?.status && status.status !== 'stopped';
   const errorCount = logs.filter(l => l.level === 'error').length;
-
 
   if (loading) {
     return (
@@ -315,7 +354,11 @@ function DouyinAutoReplyComponent() {
         <div className="flex gap-2">
           {!isRunning ? (
             <Button onClick={handleStart} disabled={actionLoading}>
-              {actionLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Play className="h-4 w-4 mr-2" />}
+              {actionLoading ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Play className="h-4 w-4 mr-2" />
+              )}
               启动
             </Button>
           ) : (
@@ -337,7 +380,13 @@ function DouyinAutoReplyComponent() {
               </Button>
             </>
           )}
-          <Button onClick={handleTest} variant="outline" disabled={actionLoading || (isRunning && status?.status !== 'paused')}>
+          <Button
+            onClick={handleTest}
+            variant="outline"
+            disabled={
+              actionLoading || (isRunning && status?.status !== 'paused')
+            }
+          >
             <FlaskConical className="h-4 w-4 mr-2" />
             测试
           </Button>
@@ -362,17 +411,20 @@ function DouyinAutoReplyComponent() {
                   <Label className="text-sm">设备</Label>
                   <Select
                     value={configForm.device_id}
-                    onValueChange={(value) => setConfigForm({ ...configForm, device_id: value })}
+                    onValueChange={value =>
+                      setConfigForm({ ...configForm, device_id: value })
+                    }
                   >
                     <SelectTrigger className="mt-1" disabled={isRunning}>
                       <span className="truncate">
                         {configForm.device_id
-                          ? devices.find((d) => d.id === configForm.device_id)?.model || configForm.device_id
+                          ? devices.find(d => d.id === configForm.device_id)
+                              ?.model || configForm.device_id
                           : '选择设备'}
                       </span>
                     </SelectTrigger>
                     <SelectContent>
-                      {devices.map((device) => (
+                      {devices.map(device => (
                         <SelectItem key={device.id} value={device.id}>
                           {device.model || device.id}
                         </SelectItem>
@@ -388,7 +440,12 @@ function DouyinAutoReplyComponent() {
                       type="number"
                       min={10}
                       value={configForm.check_interval}
-                      onChange={(e) => setConfigForm({ ...configForm, check_interval: parseInt(e.target.value) || 30 })}
+                      onChange={e =>
+                        setConfigForm({
+                          ...configForm,
+                          check_interval: parseInt(e.target.value) || 30,
+                        })
+                      }
                       disabled={isRunning}
                       className="w-20"
                     />
@@ -399,7 +456,12 @@ function DouyinAutoReplyComponent() {
                 <div className="flex items-center gap-2">
                   <Switch
                     checked={configForm.auto_reply_enabled}
-                    onCheckedChange={(checked) => setConfigForm({ ...configForm, auto_reply_enabled: checked })}
+                    onCheckedChange={checked =>
+                      setConfigForm({
+                        ...configForm,
+                        auto_reply_enabled: checked,
+                      })
+                    }
                     disabled={isRunning}
                   />
                   <Label className="text-sm">启用自动回复</Label>
@@ -409,7 +471,12 @@ function DouyinAutoReplyComponent() {
                   <Label className="text-sm">回复风格</Label>
                   <Textarea
                     value={configForm.reply_prompt_template}
-                    onChange={(e) => setConfigForm({ ...configForm, reply_prompt_template: e.target.value })}
+                    onChange={e =>
+                      setConfigForm({
+                        ...configForm,
+                        reply_prompt_template: e.target.value,
+                      })
+                    }
                     placeholder="例如：友好、专业、简洁..."
                     rows={2}
                     className="mt-1"
@@ -420,10 +487,17 @@ function DouyinAutoReplyComponent() {
                 {/* 高级选项 - 可折叠 */}
                 <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
                   <CollapsibleTrigger className="flex items-center gap-2 text-sm font-medium w-full py-2 hover:text-primary transition-colors">
-                    {advancedOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                    {advancedOpen ? (
+                      <ChevronDown className="h-4 w-4" />
+                    ) : (
+                      <ChevronRight className="h-4 w-4" />
+                    )}
                     高级选项
-                    {(configForm.decision_model_enabled || configForm.fastgpt_enabled) && (
-                      <Badge variant="secondary" className="ml-auto text-xs">已启用</Badge>
+                    {(configForm.decision_model_enabled ||
+                      configForm.fastgpt_enabled) && (
+                      <Badge variant="secondary" className="ml-auto text-xs">
+                        已启用
+                      </Badge>
                     )}
                   </CollapsibleTrigger>
                   <CollapsibleContent className="space-y-4 pt-2">
@@ -432,13 +506,19 @@ function DouyinAutoReplyComponent() {
                       <div className="flex items-center gap-2">
                         <Switch
                           checked={configForm.decision_model_enabled}
-                          onCheckedChange={(checked) => setConfigForm({ ...configForm, decision_model_enabled: checked })}
+                          onCheckedChange={checked =>
+                            setConfigForm({
+                              ...configForm,
+                              decision_model_enabled: checked,
+                            })
+                          }
                           disabled={isRunning}
                         />
                         <Label className="text-sm">决策模型解析</Label>
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        使用决策模型解析 AI 返回结果，提高识别准确性（在设置中配置）
+                        使用决策模型解析 AI
+                        返回结果，提高识别准确性（在设置中配置）
                       </p>
                     </div>
 
@@ -447,19 +527,29 @@ function DouyinAutoReplyComponent() {
                       <div className="flex items-center gap-2">
                         <Switch
                           checked={configForm.fastgpt_enabled}
-                          onCheckedChange={(checked) => setConfigForm({ ...configForm, fastgpt_enabled: checked })}
+                          onCheckedChange={checked =>
+                            setConfigForm({
+                              ...configForm,
+                              fastgpt_enabled: checked,
+                            })
+                          }
                           disabled={isRunning}
                         />
                         <Label className="text-sm">FastGPT 智能回复</Label>
                       </div>
-                      
+
                       {configForm.fastgpt_enabled && (
                         <div className="space-y-3 pl-2 border-l-2 border-blue-200 dark:border-blue-800">
                           <div>
                             <Label className="text-xs">API 地址</Label>
                             <Input
                               value={configForm.fastgpt_base_url}
-                              onChange={(e) => setConfigForm({ ...configForm, fastgpt_base_url: e.target.value })}
+                              onChange={e =>
+                                setConfigForm({
+                                  ...configForm,
+                                  fastgpt_base_url: e.target.value,
+                                })
+                              }
                               placeholder="http://xxx/api/v1/chat/completions"
                               className="mt-1 text-xs"
                               disabled={isRunning}
@@ -470,7 +560,12 @@ function DouyinAutoReplyComponent() {
                             <Input
                               type="password"
                               value={configForm.fastgpt_api_key}
-                              onChange={(e) => setConfigForm({ ...configForm, fastgpt_api_key: e.target.value })}
+                              onChange={e =>
+                                setConfigForm({
+                                  ...configForm,
+                                  fastgpt_api_key: e.target.value,
+                                })
+                              }
                               placeholder="fastgpt-xxx"
                               className="mt-1 text-xs"
                               disabled={isRunning}
@@ -483,11 +578,19 @@ function DouyinAutoReplyComponent() {
                                 type="number"
                                 min={10}
                                 value={configForm.fastgpt_timeout}
-                                onChange={(e) => setConfigForm({ ...configForm, fastgpt_timeout: parseInt(e.target.value) || 60 })}
+                                onChange={e =>
+                                  setConfigForm({
+                                    ...configForm,
+                                    fastgpt_timeout:
+                                      parseInt(e.target.value) || 60,
+                                  })
+                                }
                                 className="w-20 text-xs"
                                 disabled={isRunning}
                               />
-                              <span className="text-xs text-muted-foreground">秒</span>
+                              <span className="text-xs text-muted-foreground">
+                                秒
+                              </span>
                             </div>
                           </div>
                         </div>
@@ -496,7 +599,11 @@ function DouyinAutoReplyComponent() {
                   </CollapsibleContent>
                 </Collapsible>
 
-                <Button onClick={handleSaveConfig} className="w-full" disabled={isRunning}>
+                <Button
+                  onClick={handleSaveConfig}
+                  className="w-full"
+                  disabled={isRunning}
+                >
                   保存配置
                 </Button>
 
@@ -504,18 +611,21 @@ function DouyinAutoReplyComponent() {
                 <div className="pt-4 border-t space-y-2">
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">已回复消息</span>
-                    <span className="font-medium">{status?.messages_replied || 0}</span>
+                    <span className="font-medium">
+                      {status?.messages_replied || 0}
+                    </span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">上次检查</span>
-                    <span className="font-medium">{status?.last_check_time || '-'}</span>
+                    <span className="font-medium">
+                      {status?.last_check_time || '-'}
+                    </span>
                   </div>
                 </div>
               </div>
             </ScrollArea>
           </CardContent>
         </Card>
-
 
         {/* 右侧：日志和历史 - 自适应宽度 */}
         <Card className="flex-1 flex flex-col min-w-0 overflow-hidden">
@@ -526,12 +636,18 @@ function DouyinAutoReplyComponent() {
                   <Activity className="h-4 w-4" />
                   实时日志
                   {errorCount > 0 && (
-                    <Badge variant="destructive" className="ml-1 h-5 px-1.5 text-xs">
+                    <Badge
+                      variant="destructive"
+                      className="ml-1 h-5 px-1.5 text-xs"
+                    >
                       {errorCount}
                     </Badge>
                   )}
                 </TabsTrigger>
-                <TabsTrigger value="history" className="flex items-center gap-1">
+                <TabsTrigger
+                  value="history"
+                  className="flex items-center gap-1"
+                >
                   <Clock className="h-4 w-4" />
                   回复历史
                 </TabsTrigger>
@@ -551,7 +667,9 @@ function DouyinAutoReplyComponent() {
                       全部
                     </Button>
                     <Button
-                      variant={logFilter === 'error' ? 'destructive' : 'outline'}
+                      variant={
+                        logFilter === 'error' ? 'destructive' : 'outline'
+                      }
                       size="sm"
                       onClick={() => setLogFilter('error')}
                     >
@@ -573,7 +691,9 @@ function DouyinAutoReplyComponent() {
                     <div className="p-3 space-y-1 font-mono text-xs">
                       {filteredLogs.length === 0 ? (
                         <p className="text-muted-foreground text-center py-8">
-                          {logFilter === 'error' ? '暂无错误日志' : '暂无日志，启动监控后将显示实时日志'}
+                          {logFilter === 'error'
+                            ? '暂无错误日志'
+                            : '暂无日志，启动监控后将显示实时日志'}
                         </p>
                       ) : (
                         filteredLogs.map((log, index) => (
@@ -593,7 +713,10 @@ function DouyinAutoReplyComponent() {
                   </ScrollArea>
                 </div>
               </TabsContent>
-              <TabsContent value="history" className="h-full m-0 overflow-hidden">
+              <TabsContent
+                value="history"
+                className="h-full m-0 overflow-hidden"
+              >
                 <div className="h-full flex flex-col overflow-hidden gap-2">
                   {/* 历史搜索 */}
                   <div className="flex items-center gap-2 shrink-0">
@@ -602,7 +725,7 @@ function DouyinAutoReplyComponent() {
                       <Input
                         placeholder="搜索用户名或消息内容..."
                         value={historySearch}
-                        onChange={(e) => setHistorySearch(e.target.value)}
+                        onChange={e => setHistorySearch(e.target.value)}
                         className="pl-8"
                       />
                     </div>
@@ -616,9 +739,14 @@ function DouyinAutoReplyComponent() {
                         </p>
                       ) : (
                         filteredHistory.map((item, index) => (
-                          <div key={index} className="border rounded-lg p-3 space-y-1 text-sm">
+                          <div
+                            key={index}
+                            className="border rounded-lg p-3 space-y-1 text-sm"
+                          >
                             <div className="flex items-center justify-between">
-                              <span className="font-medium">用户：{item.sender || '未知'}</span>
+                              <span className="font-medium">
+                                用户：{item.sender || '未知'}
+                              </span>
                               <div className="flex items-center gap-2">
                                 {item.success ? (
                                   <CheckCircle2 className="h-4 w-4 text-green-500" />
@@ -631,15 +759,21 @@ function DouyinAutoReplyComponent() {
                               </div>
                             </div>
                             <div>
-                              <span className="text-muted-foreground">收到: </span>
+                              <span className="text-muted-foreground">
+                                收到:{' '}
+                              </span>
                               {item.received_message || '-'}
                             </div>
                             <div>
-                              <span className="text-muted-foreground">回复: </span>
+                              <span className="text-muted-foreground">
+                                回复:{' '}
+                              </span>
                               {item.reply_message || '-'}
                             </div>
                             {item.error && (
-                              <div className="text-red-500">错误: {item.error}</div>
+                              <div className="text-red-500">
+                                错误: {item.error}
+                              </div>
                             )}
                           </div>
                         ))

@@ -279,6 +279,7 @@ export const en = {
     history: 'History',
     scheduledTasks: 'Scheduled Tasks',
     douyinAutoReply: 'Douyin Auto-Reply',
+    douyinComment: 'Douyin Comment Marketing',
     logs: 'Logs',
   },
   logs: {
@@ -414,7 +415,8 @@ export const en = {
   douyinAutoReply: {
     title: 'Douyin Auto-Reply',
     description: 'Set up auto-reply rules for Douyin private messages',
-    monitorDescription: 'Automatically detect new Douyin messages and reply intelligently',
+    monitorDescription:
+      'Automatically detect new Douyin messages and reply intelligently',
     rules: 'Reply Rules',
     createRule: 'Create Rule',
     editRule: 'Edit Rule',
@@ -483,8 +485,106 @@ export const en = {
     settings: 'Settings',
     quickConfig: 'Quick Config',
     replyPrompt: 'Reply Prompt',
-    replyPromptPlaceholder: 'Customize reply style and requirements, leave empty for default...',
-    replyPromptHint: 'Customize AI reply style, tone, content requirements, etc.',
+    replyPromptPlaceholder:
+      'Customize reply style and requirements, leave empty for default...',
+    replyPromptHint:
+      'Customize AI reply style, tone, content requirements, etc.',
     configSaved: 'Config saved',
+  },
+  douyinComment: {
+    title: 'Douyin Comment Marketing',
+    subtitle:
+      'Auto search videos and reply to comments, simulating real user behavior',
+    createTask: 'Create Task',
+    editTask: 'Edit Task',
+    noTasks: 'No comment tasks yet',
+    createFirst: 'Create your first task to start marketing',
+    // Basic info
+    taskName: 'Task Name',
+    taskNamePlaceholder: 'e.g., Mushroom Recipe Comment Marketing',
+    device: 'Device',
+    selectDevice: 'Select Device',
+    // Search config
+    searchConfig: 'Search Config',
+    searchKeywords: 'Search Keywords',
+    searchKeywordsPlaceholder: 'One keyword per line',
+    searchKeywordsHint: 'Randomly select one keyword for each execution',
+    // Video filter
+    videoFilter: 'Video Filter',
+    minLikes: 'Min Likes',
+    maxLikes: 'Max Likes',
+    maxDaysAgo: 'Max Days Ago',
+    maxDaysAgoHint: 'Only select videos published within N days',
+    // Interaction
+    interaction: 'Interaction',
+    watchVideo: 'Watch Video',
+    watchDurationRatio: 'Watch Ratio',
+    watchDurationRatioHint: 'Percentage of video duration to watch',
+    likeVideo: 'Like Video',
+    favoriteVideo: 'Favorite Video',
+    likeProbability: 'Like Probability',
+    likeProbabilityHint: 'Probability of liking each video',
+    // Comment config
+    commentConfig: 'Comment Config',
+    replyRatio: 'Reply Ratio',
+    replyRatioHint: 'Comments × Ratio = Number of replies',
+    maxRepliesPerVideo: 'Max Replies Per Video',
+    minRepliesPerVideo: 'Min Replies Per Video',
+    targetHotComments: 'Prioritize Hot Comments',
+    replyIntervalMin: 'Reply Interval (Min)',
+    replyIntervalMax: 'Reply Interval (Max)',
+    secondsUnit: 'sec',
+    // Content config
+    contentConfig: 'Content Config',
+    useAi: 'Use AI Generation',
+    useAiHint:
+      'Intelligently generate replies based on video and comment content',
+    contentStyle: 'Content Style',
+    styleKoc: 'KOC Style (Key Opinion Consumer)',
+    templates: 'Templates',
+    templatesPlaceholder:
+      'One template per line, AI will reference these styles',
+    templatesHint:
+      'Reference for AI generation, or fallback when AI unavailable',
+    // Execution config
+    executionConfig: 'Execution Config',
+    videosPerRun: 'Videos Per Run',
+    videoIntervalMin: 'Video Interval (Min)',
+    videoIntervalMax: 'Video Interval (Max)',
+    // Cron config
+    cronExpression: 'Cron Expression',
+    cronPlaceholder: '0 10,15,20 * * *',
+    cronHint: 'Leave empty for manual execution only',
+    // Status
+    enabled: 'Enabled',
+    disabled: 'Disabled',
+    running: 'Running',
+    enable: 'Enable',
+    disable: 'Disable',
+    runNow: 'Run Now',
+    // History
+    history: 'History',
+    noHistory: 'No execution history',
+    videosProcessed: 'Videos Processed',
+    commentsSent: 'Comments Sent',
+    success: 'Success',
+    partial: 'Partial',
+    failed: 'Failed',
+    aborted: 'Aborted',
+    // Actions
+    save: 'Save',
+    cancel: 'Cancel',
+    delete: 'Delete',
+    deleteConfirm: 'Are you sure you want to delete this task?',
+    taskCreated: 'Task created',
+    taskUpdated: 'Task updated',
+    taskDeleted: 'Task deleted',
+    taskEnabled: 'Task enabled',
+    taskDisabled: 'Task disabled',
+    taskStarted: 'Task started',
+    error: 'Error',
+    nextRun: 'Next Run',
+    lastRun: 'Last Run',
+    never: 'Never',
   },
 };

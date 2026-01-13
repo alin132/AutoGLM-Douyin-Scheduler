@@ -668,9 +668,20 @@ def abort_session(request: AbortSessionRequest):
     Abort a running layered agent session.
 
     Uses the OpenAI agents SDK's native cancel() method to stop execution.
+    Also aborts any underlying Phone Agent that may be running.
     """
+    from AutoGLM_GUI.phone_agent_manager import PhoneAgentManager
+
     session_id = request.session_id
 
+    # 1. 先尝试取消底层的 Phone Agent（如果正在执行 chat 工具）
+    # session_id 通常就是 device_id
+    agent_manager = PhoneAgentManager.get_instance()
+    agent_aborted = agent_manager.abort_streaming_chat(session_id)
+    if agent_aborted:
+        logger.info(f"[LayeredAgent] Also aborted underlying Phone Agent for: {session_id}")
+
+    # 2. 取消分层代理的运行
     with _active_runs_lock:
         if session_id in _active_runs:
             result = _active_runs[session_id]
@@ -681,6 +692,12 @@ def abort_session(request: AbortSessionRequest):
                 "message": f"Session {session_id} abort signal sent",
             }
         else:
+            # 即使没有活跃的分层代理运行，如果底层 agent 被取消了也算成功
+            if agent_aborted:
+                return {
+                    "success": True,
+                    "message": f"Underlying agent for {session_id} aborted",
+                }
             logger.warning(
                 f"[LayeredAgent] No active run found for session: {session_id}"
             )

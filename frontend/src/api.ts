@@ -1314,7 +1314,6 @@ export async function getAllTaskHistory(
   return res.data;
 }
 
-
 // ==================== Douyin Auto-Reply API ====================
 
 export interface DouyinReplyRule {
@@ -1398,9 +1397,7 @@ export async function deleteDouyinRule(uuid: string): Promise<void> {
   await axios.delete(`/api/douyin/rules/${uuid}`);
 }
 
-export async function enableDouyinRule(
-  uuid: string
-): Promise<DouyinReplyRule> {
+export async function enableDouyinRule(uuid: string): Promise<DouyinReplyRule> {
   const res = await axios.post<DouyinReplyRule>(
     `/api/douyin/rules/${uuid}/enable`
   );
@@ -1439,7 +1436,6 @@ export async function getDouyinReplyHistory(
 export async function clearDouyinHistory(): Promise<void> {
   await axios.delete('/api/douyin/history');
 }
-
 
 // ==================== Douyin Message Monitor API ====================
 
@@ -1500,12 +1496,16 @@ export interface DouyinMonitorLog {
 }
 
 export async function getDouyinMonitorStatus(): Promise<DouyinMonitorStatus> {
-  const res = await axios.get<DouyinMonitorStatus>('/api/douyin/monitor/status');
+  const res = await axios.get<DouyinMonitorStatus>(
+    '/api/douyin/monitor/status'
+  );
   return res.data;
 }
 
 export async function getDouyinMonitorConfig(): Promise<DouyinMonitorConfig> {
-  const res = await axios.get<DouyinMonitorConfig>('/api/douyin/monitor/config');
+  const res = await axios.get<DouyinMonitorConfig>(
+    '/api/douyin/monitor/config'
+  );
   return res.data;
 }
 
@@ -1584,5 +1584,212 @@ export async function getDouyinMonitorLogs(
   const res = await axios.get<DouyinMonitorLog[]>('/api/douyin/monitor/logs', {
     params: { limit },
   });
+  return res.data;
+}
+
+// ==================== Douyin Comment Task API ====================
+
+export interface DouyinCommentVideoFilter {
+  min_likes: number;
+  max_likes: number;
+  max_days_ago: number;
+  sort_by: 'latest' | 'default';
+}
+
+export interface DouyinCommentInteraction {
+  watch_video: boolean;
+  watch_duration_ratio: number;
+  like_video: boolean;
+  favorite_video: boolean;
+  like_probability: number;
+}
+
+export interface DouyinCommentConfig {
+  mode: 'reply' | 'direct';
+  reply_ratio: number;
+  max_replies_per_video: number;
+  min_replies_per_video: number;
+  target_hot_comments: boolean;
+  reply_interval_min: number;
+  reply_interval_max: number;
+}
+
+export interface DouyinCommentContent {
+  use_ai: boolean;
+  style: string;
+  templates: string[];
+}
+
+export interface DouyinCommentExecution {
+  videos_per_run: number;
+  video_interval_min: number;
+  video_interval_max: number;
+}
+
+export interface DouyinCommentTask {
+  uuid: string;
+  name: string;
+  device_id: string;
+  search_keywords: string[];
+  video_filter: DouyinCommentVideoFilter;
+  interaction: DouyinCommentInteraction;
+  comment: DouyinCommentConfig;
+  content: DouyinCommentContent;
+  execution: DouyinCommentExecution;
+  cron_expression: string | null;
+  status: 'enabled' | 'disabled' | 'running';
+  created_at: string;
+  updated_at: string;
+  last_run: string | null;
+  next_run: string | null;
+}
+
+export interface DouyinCommentTaskCreateRequest {
+  name: string;
+  device_id: string;
+  search_keywords: string[];
+  video_filter?: Partial<DouyinCommentVideoFilter>;
+  interaction?: Partial<DouyinCommentInteraction>;
+  comment?: Partial<DouyinCommentConfig>;
+  content?: Partial<DouyinCommentContent>;
+  execution?: Partial<DouyinCommentExecution>;
+  cron_expression?: string;
+  enabled?: boolean;
+}
+
+export interface DouyinCommentTaskUpdateRequest {
+  name?: string;
+  device_id?: string;
+  search_keywords?: string[];
+  video_filter?: Partial<DouyinCommentVideoFilter>;
+  interaction?: Partial<DouyinCommentInteraction>;
+  comment?: Partial<DouyinCommentConfig>;
+  content?: Partial<DouyinCommentContent>;
+  execution?: Partial<DouyinCommentExecution>;
+  cron_expression?: string;
+}
+
+export interface DouyinCommentTaskListResponse {
+  tasks: DouyinCommentTask[];
+}
+
+export interface DouyinCommentDetail {
+  video: string;
+  original_comment: string;
+  my_reply: string;
+}
+
+export interface DouyinCommentHistory {
+  uuid: string;
+  task_uuid: string;
+  task_name: string;
+  device_id: string;
+  started_at: string;
+  finished_at: string | null;
+  status: 'success' | 'partial' | 'failed' | 'aborted';
+  videos_processed: number;
+  comments_sent: number;
+  error: string | null;
+  result?: string | null;
+  details?: DouyinCommentDetail[];
+}
+
+export interface DouyinCommentHistoryListResponse {
+  history: DouyinCommentHistory[];
+}
+
+export async function listDouyinCommentTasks(): Promise<DouyinCommentTaskListResponse> {
+  const res = await axios.get<DouyinCommentTaskListResponse>(
+    '/api/douyin/comment/tasks'
+  );
+  return res.data;
+}
+
+export async function getDouyinCommentTask(
+  uuid: string
+): Promise<DouyinCommentTask> {
+  const res = await axios.get<DouyinCommentTask>(
+    `/api/douyin/comment/tasks/${uuid}`
+  );
+  return res.data;
+}
+
+export async function createDouyinCommentTask(
+  request: DouyinCommentTaskCreateRequest
+): Promise<DouyinCommentTask> {
+  const res = await axios.post<DouyinCommentTask>(
+    '/api/douyin/comment/tasks',
+    request
+  );
+  return res.data;
+}
+
+export async function updateDouyinCommentTask(
+  uuid: string,
+  request: DouyinCommentTaskUpdateRequest
+): Promise<DouyinCommentTask> {
+  const res = await axios.put<DouyinCommentTask>(
+    `/api/douyin/comment/tasks/${uuid}`,
+    request
+  );
+  return res.data;
+}
+
+export async function deleteDouyinCommentTask(uuid: string): Promise<void> {
+  await axios.delete(`/api/douyin/comment/tasks/${uuid}`);
+}
+
+export async function enableDouyinCommentTask(
+  uuid: string
+): Promise<DouyinCommentTask> {
+  const res = await axios.post<DouyinCommentTask>(
+    `/api/douyin/comment/tasks/${uuid}/enable`
+  );
+  return res.data;
+}
+
+export async function disableDouyinCommentTask(
+  uuid: string
+): Promise<DouyinCommentTask> {
+  const res = await axios.post<DouyinCommentTask>(
+    `/api/douyin/comment/tasks/${uuid}/disable`
+  );
+  return res.data;
+}
+
+export async function runDouyinCommentTaskNow(uuid: string): Promise<{
+  success: boolean;
+  message: string;
+}> {
+  const res = await axios.post(`/api/douyin/comment/tasks/${uuid}/run`);
+  return res.data;
+}
+
+export async function abortDouyinCommentTask(uuid: string): Promise<{
+  success: boolean;
+  message: string;
+}> {
+  const res = await axios.post(`/api/douyin/comment/tasks/${uuid}/abort`);
+  return res.data;
+}
+
+export async function getDouyinCommentTaskHistory(
+  taskUuid: string,
+  limit: number = 50
+): Promise<DouyinCommentHistoryListResponse> {
+  const res = await axios.get<DouyinCommentHistoryListResponse>(
+    `/api/douyin/comment/tasks/${taskUuid}/history`,
+    { params: { limit } }
+  );
+  return res.data;
+}
+
+export async function getAllDouyinCommentHistory(
+  limit: number = 50
+): Promise<DouyinCommentHistoryListResponse> {
+  const res = await axios.get<DouyinCommentHistoryListResponse>(
+    '/api/douyin/comment/history',
+    { params: { limit } }
+  );
   return res.data;
 }

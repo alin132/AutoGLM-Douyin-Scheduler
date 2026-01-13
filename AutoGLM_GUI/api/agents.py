@@ -220,6 +220,8 @@ def chat_stream(request: ChatRequest):
 
             try:
                 agent = manager.get_agent(device_id)
+                # 重置 Agent 状态，确保新任务不会继承上一个任务的历史
+                agent.reset()
                 streamer = AgentStepStreamer(agent=agent, task=request.message)
 
                 with streamer.stream_context() as abort_fn:
