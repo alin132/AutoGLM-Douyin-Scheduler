@@ -47,12 +47,17 @@ export const en = {
     maxStepsHint: 'Maximum steps per task (1-1000)',
     visionModelTab: 'Vision Model',
     decisionModelTab: 'Decision Model',
+    replyModelTab: 'Reply Model',
     selectDecisionPreset: 'Select Decision Model Preset',
     decisionBaseUrl: 'Decision Model Base URL',
     decisionApiKey: 'Decision Model API Key',
     decisionModelName: 'Decision Model Name',
     decisionModelHint:
       'Decision model is used for planning in layered agent mode. You must configure the decision model when using layered agent mode.',
+    replyModelDesc: 'Model for generating comment reply content',
+    replyBaseUrl: 'Reply Model Base URL',
+    replyApiKey: 'Reply Model API Key',
+    replyModelName: 'Reply Model Name',
   },
   deviceSidebar: {
     devices: 'Devices',
@@ -280,6 +285,7 @@ export const en = {
     scheduledTasks: 'Scheduled Tasks',
     douyinAutoReply: 'Douyin Auto-Reply',
     douyinComment: 'Douyin Comment Marketing',
+    douyinStats: 'Statistics',
     logs: 'Logs',
   },
   logs: {

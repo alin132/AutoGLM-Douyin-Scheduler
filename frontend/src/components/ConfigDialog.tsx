@@ -29,6 +29,7 @@ import {
   Brain,
   Cpu,
   Info,
+  MessageSquare,
 } from 'lucide-react';
 import { useTranslation } from '../lib/i18n-context';
 
@@ -106,6 +107,33 @@ const DECISION_PRESETS = [
   },
 ] as const;
 
+// 回复模型预设配置
+const REPLY_PRESETS = [
+  {
+    name: 'bigmodel',
+    config: {
+      reply_base_url: 'https://open.bigmodel.cn/api/paas/v4',
+      reply_model_name: 'glm-4-flash',
+    },
+    apiKeyUrl: 'https://bigmodel.cn/usercenter/proj-mgmt/apikeys',
+  },
+  {
+    name: 'modelscope',
+    config: {
+      reply_base_url: 'https://api-inference.modelscope.cn/v1',
+      reply_model_name: 'Qwen/Qwen2.5-7B-Instruct',
+    },
+    apiKeyUrl: 'https://www.modelscope.cn/my/myaccesstoken',
+  },
+  {
+    name: 'custom',
+    config: {
+      reply_base_url: '',
+      reply_model_name: '',
+    },
+  },
+] as const;
+
 interface ConfigDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -133,6 +161,9 @@ export function ConfigDialog({
     decision_base_url: '',
     decision_model_name: '',
     decision_api_key: '',
+    reply_base_url: '',
+    reply_model_name: '',
+    reply_api_key: '',
   });
 
   const showToast = onToast || ((msg: string) => console.log(msg));
@@ -153,6 +184,9 @@ export function ConfigDialog({
           decision_base_url: data.decision_base_url || undefined,
           decision_model_name: data.decision_model_name || undefined,
           decision_api_key: data.decision_api_key || undefined,
+          reply_base_url: data.reply_base_url || undefined,
+          reply_model_name: data.reply_model_name || undefined,
+          reply_api_key: data.reply_api_key || undefined,
         });
         const useDefault = !data.base_url;
         setTempConfig({
@@ -169,6 +203,9 @@ export function ConfigDialog({
           decision_base_url: data.decision_base_url || '',
           decision_model_name: data.decision_model_name || 'glm-4.7',
           decision_api_key: data.decision_api_key || '',
+          reply_base_url: data.reply_base_url || '',
+          reply_model_name: data.reply_model_name || '',
+          reply_api_key: data.reply_api_key || '',
         });
       } catch (err) {
         console.error('Failed to load config:', err);
@@ -198,6 +235,9 @@ export function ConfigDialog({
         decision_base_url: tempConfig.decision_base_url || undefined,
         decision_model_name: tempConfig.decision_model_name || undefined,
         decision_api_key: tempConfig.decision_api_key || undefined,
+        reply_base_url: tempConfig.reply_base_url || undefined,
+        reply_model_name: tempConfig.reply_model_name || undefined,
+        reply_api_key: tempConfig.reply_api_key || undefined,
       });
 
       setConfig({
@@ -213,6 +253,9 @@ export function ConfigDialog({
         decision_base_url: tempConfig.decision_base_url || undefined,
         decision_model_name: tempConfig.decision_model_name || undefined,
         decision_api_key: tempConfig.decision_api_key || undefined,
+        reply_base_url: tempConfig.reply_base_url || undefined,
+        reply_model_name: tempConfig.reply_model_name || undefined,
+        reply_api_key: tempConfig.reply_api_key || undefined,
       });
 
       showToast(t.toasts.configSaved, 'success');
@@ -239,7 +282,7 @@ export function ConfigDialog({
         </DialogHeader>
 
         <Tabs defaultValue="vision" className="flex-1 flex flex-col min-h-0">
-          <TabsList className="grid w-full grid-cols-2 flex-shrink-0">
+          <TabsList className="grid w-full grid-cols-3 flex-shrink-0">
             <TabsTrigger value="vision">
               <Eye className="w-4 h-4 mr-2" />
               {t.chat.visionModelTab}
@@ -247,6 +290,10 @@ export function ConfigDialog({
             <TabsTrigger value="decision">
               <Brain className="w-4 h-4 mr-2" />
               {t.chat.decisionModelTab}
+            </TabsTrigger>
+            <TabsTrigger value="reply">
+              <MessageSquare className="w-4 h-4 mr-2" />
+              {t.chat.replyModelTab || '回复模型'}
             </TabsTrigger>
           </TabsList>
 
@@ -640,6 +687,130 @@ export function ConfigDialog({
               />
             </div>
           </TabsContent>
+
+          {/* 回复模型配置 */}
+          <TabsContent
+            value="reply"
+            className="flex-1 overflow-y-auto space-y-4 pr-2"
+          >
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              {t.chat.replyModelDesc || '用于生成抖音评论回复内容的模型'}
+            </p>
+
+            {/* 预设选择 */}
+            <div className="grid grid-cols-3 gap-2">
+              {REPLY_PRESETS.map(preset => (
+                <button
+                  key={preset.name}
+                  onClick={() =>
+                    setTempConfig(prev => ({
+                      ...prev,
+                      reply_base_url: preset.config.reply_base_url,
+                      reply_model_name: preset.config.reply_model_name,
+                    }))
+                  }
+                  className={`w-full text-left p-3 rounded-lg border transition-all ${
+                    tempConfig.reply_base_url ===
+                      preset.config.reply_base_url &&
+                    (preset.name !== 'custom' ||
+                      tempConfig.reply_base_url === '')
+                      ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950/50'
+                      : 'border-slate-200 dark:border-slate-700 hover:border-indigo-500/50 hover:bg-indigo-50 dark:hover:bg-indigo-950/30'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <Server
+                      className={`w-4 h-4 ${
+                        tempConfig.reply_base_url ===
+                          preset.config.reply_base_url &&
+                        (preset.name !== 'custom' ||
+                          tempConfig.reply_base_url === '')
+                          ? 'text-indigo-600 dark:text-indigo-400'
+                          : 'text-slate-400 dark:text-slate-500'
+                      }`}
+                    />
+                    <span className="font-medium text-sm">
+                      {t.chat[`preset_${preset.name}` as keyof typeof t.chat] ||
+                        preset.name}
+                    </span>
+                  </div>
+                  {preset.name !== 'custom' && (
+                    <p className="text-xs text-slate-500 mt-1 truncate">
+                      {preset.config.reply_model_name}
+                    </p>
+                  )}
+                </button>
+              ))}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="reply_base_url">
+                {t.chat.replyBaseUrl || '回复模型 Base URL'} *
+              </Label>
+              <Input
+                id="reply_base_url"
+                value={tempConfig.reply_base_url}
+                onChange={e =>
+                  setTempConfig({
+                    ...tempConfig,
+                    reply_base_url: e.target.value,
+                  })
+                }
+                placeholder="http://localhost:8080/v1"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="reply_api_key">
+                {t.chat.replyApiKey || '回复模型 API Key'}
+              </Label>
+              <div className="relative">
+                <Input
+                  id="reply_api_key"
+                  type={showApiKey ? 'text' : 'password'}
+                  value={tempConfig.reply_api_key}
+                  onChange={e =>
+                    setTempConfig({
+                      ...tempConfig,
+                      reply_api_key: e.target.value,
+                    })
+                  }
+                  placeholder="sk-..."
+                  className="pr-10"
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setShowApiKey(!showApiKey)}
+                  className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                >
+                  {showApiKey ? (
+                    <EyeOff className="w-4 h-4 text-slate-400" />
+                  ) : (
+                    <Eye className="w-4 h-4 text-slate-400" />
+                  )}
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="reply_model_name">
+                {t.chat.replyModelName || '回复模型名称'} *
+              </Label>
+              <Input
+                id="reply_model_name"
+                value={tempConfig.reply_model_name}
+                onChange={e =>
+                  setTempConfig({
+                    ...tempConfig,
+                    reply_model_name: e.target.value,
+                  })
+                }
+                placeholder="glm-4-flash"
+              />
+            </div>
+          </TabsContent>
         </Tabs>
 
         <DialogFooter className="sm:justify-between gap-2 flex-shrink-0">
@@ -659,6 +830,9 @@ export function ConfigDialog({
                   decision_model_name:
                     config.decision_model_name || 'glm-4v-plus',
                   decision_api_key: config.decision_api_key || '',
+                  reply_base_url: config.reply_base_url || '',
+                  reply_model_name: config.reply_model_name || '',
+                  reply_api_key: config.reply_api_key || '',
                 });
               }
             }}

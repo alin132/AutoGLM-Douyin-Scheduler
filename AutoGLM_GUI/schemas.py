@@ -301,6 +301,11 @@ class ConfigResponse(BaseModel):
     decision_model_name: str | None = None
     decision_api_key: str | None = None
 
+    # 回复模型配置（用于生成评论回复）
+    reply_base_url: str | None = None
+    reply_model_name: str | None = None
+    reply_api_key: str | None = None
+
     conflicts: list[dict] | None = None  # 配置冲突信息（可选）
 
 
@@ -322,6 +327,11 @@ class ConfigSaveRequest(BaseModel):
     decision_base_url: str | None = None
     decision_model_name: str | None = None
     decision_api_key: str | None = None
+
+    # 回复模型配置（用于生成评论回复）
+    reply_base_url: str | None = None
+    reply_model_name: str | None = None
+    reply_api_key: str | None = None
 
     @field_validator("default_max_steps")
     @classmethod

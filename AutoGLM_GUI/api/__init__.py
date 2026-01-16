@@ -3,7 +3,7 @@
 import asyncio
 import os
 import sys
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from importlib.resources import files
 from pathlib import Path
 
@@ -87,7 +87,7 @@ def create_app() -> FastAPI:
     async def combined_lifespan(app: FastAPI):
         """Combine app startup logic with MCP lifespan."""
         # App startup
-        asyncio.create_task(qr_pairing_manager.cleanup_expired_sessions())
+        qr_cleanup_task = asyncio.create_task(qr_pairing_manager.cleanup_expired_sessions())
 
         from AutoGLM_GUI.device_manager import DeviceManager
         from AutoGLM_GUI.phone_agent_manager import PhoneAgentManager
@@ -111,16 +111,16 @@ def create_app() -> FastAPI:
 
             manager = PhoneAgentManager.get_instance()
 
-            # Try to acquire the device
+            # Try to acquire the device with timeout
             acquired = manager.acquire_device(
                 device_id,
-                timeout=0,
+                timeout=5,  # 等待 5 秒
                 raise_on_timeout=False,
                 auto_initialize=True,
             )
 
             if not acquired:
-                raise RuntimeError(f"Device {device_id} is busy or unavailable")
+                raise RuntimeError(f"Device {device_id} is busy or unavailable (可能正在被聊天界面使用)")
 
             try:
                 agent = manager.get_agent(device_id)
@@ -165,6 +165,11 @@ def create_app() -> FastAPI:
                 raise RuntimeError(f"Device {device_id} is busy (可能正在被聊天界面使用，请先关闭聊天或等待完成)")
 
             try:
+                # 检查任务是否已被中止
+                if not douyin_comment_task_manager.is_task_running(task_uuid):
+                    logger.info(f"Task {task_uuid} was aborted before execution")
+                    return "Task aborted"
+                
                 agent = manager.get_agent(device_id)
                 if agent is None:
                     raise RuntimeError(f"Failed to get agent for device {device_id}")
@@ -174,6 +179,12 @@ def create_app() -> FastAPI:
                 
                 agent.reset()
                 result = agent.run(prompt)
+                
+                # 执行完成后再次检查是否被中止
+                if not douyin_comment_task_manager.is_task_running(task_uuid):
+                    logger.info(f"Task {task_uuid} was aborted during execution")
+                    return "Task aborted"
+                
                 return result if result else "Task completed successfully"
             finally:
                 manager.release_device(device_id)
@@ -188,16 +199,21 @@ def create_app() -> FastAPI:
         # App shutdown
         scheduled_task_manager.stop_scheduler()
         douyin_comment_task_manager.stop_scheduler()
+        device_manager.stop_polling()
+        qr_cleanup_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await qr_cleanup_task
 
     # Create FastAPI app with combined lifespan
     app = FastAPI(
         title="AutoGLM-GUI API", version=APP_VERSION, lifespan=combined_lifespan
     )
 
+    cors_origins = _get_cors_origins()
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=_get_cors_origins(),
-        allow_credentials=True,
+        allow_origins=cors_origins,
+        allow_credentials=cors_origins != ["*"],
         allow_methods=["*"],
         allow_headers=["*"],
     )
@@ -227,8 +243,24 @@ def create_app() -> FastAPI:
             app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
 
         # Define SPA serving function
+        static_root = static_dir.resolve()
+
         async def serve_spa(full_path: str) -> FileResponse:
-            file_path = static_dir / full_path
+            safe_path = full_path.lstrip("/")
+            file_path = (static_dir / safe_path).resolve()
+
+            # Prevent path traversal outside the static directory.
+            if not file_path.is_relative_to(static_root):
+                return FileResponse(
+                    static_dir / "index.html",
+                    media_type="text/html",
+                    headers={
+                        "Cache-Control": "no-cache, no-store, must-revalidate",
+                        "Pragma": "no-cache",
+                        "Expires": "0",
+                    },
+                )
+
             if file_path.is_file():
                 # Explicitly set media_type for common file types to avoid MIME detection issues
                 # This is critical for PyInstaller environments where mimetypes module may fail

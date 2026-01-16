@@ -303,6 +303,15 @@ class PhoneAgentManager:
             # Remove metadata
             self._metadata.pop(device_id, None)
 
+            # Clean up device lock to prevent memory leak
+            with self._device_locks_lock:
+                self._device_locks.pop(device_id, None)
+
+            # Clean up streaming contexts
+            with self._streaming_contexts_lock:
+                self._streaming_contexts.pop(device_id, None)
+                self._abort_events.pop(device_id, None)
+
             logger.info(f"Agent destroyed for device {device_id}")
 
     def is_initialized(self, device_id: str) -> bool:
@@ -314,7 +323,7 @@ class PhoneAgentManager:
 
     def _get_device_lock(self, device_id: str) -> threading.Lock:
         """
-        Get or create device lock (double-checked locking pattern).
+        Get or create device lock (thread-safe).
 
         Args:
             device_id: Device identifier
@@ -322,13 +331,8 @@ class PhoneAgentManager:
         Returns:
             threading.Lock: Device-specific lock
         """
-        # Fast path: lock already exists
-        if device_id in self._device_locks:
-            return self._device_locks[device_id]
-
-        # Slow path: create lock
+        # 始终在锁内操作，避免竞态条件
         with self._device_locks_lock:
-            # Double-check inside lock
             if device_id not in self._device_locks:
                 self._device_locks[device_id] = threading.Lock()
             return self._device_locks[device_id]

@@ -64,6 +64,11 @@ class ConfigModel(BaseModel):
     decision_model_name: str | None = None
     decision_api_key: str | None = None
 
+    # 回复模型配置（用于生成评论回复内容）
+    reply_base_url: str | None = None
+    reply_model_name: str | None = None
+    reply_api_key: str | None = None
+
     @field_validator("default_max_steps")
     @classmethod
     def validate_default_max_steps(cls, v: int) -> int:
@@ -110,6 +115,26 @@ class ConfigModel(BaseModel):
             raise ValueError("decision_model_name cannot be empty string")
         return v.strip() if v else v
 
+    @field_validator("reply_base_url")
+    @classmethod
+    def validate_reply_base_url(cls, v: str | None) -> str | None:
+        """验证 reply_base_url 格式."""
+        if v is not None:
+            if not v.startswith(("http://", "https://")):
+                raise ValueError(
+                    "reply_base_url must start with http:// or https://"
+                )
+            return v.rstrip("/")
+        return v
+
+    @field_validator("reply_model_name")
+    @classmethod
+    def validate_reply_model_name(cls, v: str | None) -> str | None:
+        """验证 reply_model_name 非空."""
+        if v is not None and (not v or not v.strip()):
+            raise ValueError("reply_model_name cannot be empty string")
+        return v.strip() if v else v
+
 
 # ==================== 配置层数据类 ====================
 
@@ -130,6 +155,10 @@ class ConfigLayer:
     decision_base_url: Optional[str] = None
     decision_model_name: Optional[str] = None
     decision_api_key: Optional[str] = None
+    # 回复模型配置
+    reply_base_url: Optional[str] = None
+    reply_model_name: Optional[str] = None
+    reply_api_key: Optional[str] = None
 
     source: ConfigSource = ConfigSource.DEFAULT
 
@@ -163,6 +192,9 @@ class ConfigLayer:
                 "decision_base_url": self.decision_base_url,
                 "decision_model_name": self.decision_model_name,
                 "decision_api_key": self.decision_api_key,
+                "reply_base_url": self.reply_base_url,
+                "reply_model_name": self.reply_model_name,
+                "reply_api_key": self.reply_api_key,
             }.items()
             if v is not None
         }
@@ -228,6 +260,9 @@ class UnifiedConfigManager:
             decision_base_url=None,
             decision_model_name=None,
             decision_api_key=None,
+            reply_base_url=None,
+            reply_model_name=None,
+            reply_api_key=None,
             source=ConfigSource.DEFAULT,
         )
 
@@ -287,6 +322,11 @@ class UnifiedConfigManager:
         decision_model_name = os.getenv("AUTOGLM_DECISION_MODEL_NAME")
         decision_api_key = os.getenv("AUTOGLM_DECISION_API_KEY")
 
+        # 回复模型环境变量
+        reply_base_url = os.getenv("AUTOGLM_REPLY_BASE_URL")
+        reply_model_name = os.getenv("AUTOGLM_REPLY_MODEL_NAME")
+        reply_api_key = os.getenv("AUTOGLM_REPLY_API_KEY")
+
         self._env_layer = ConfigLayer(
             base_url=base_url if base_url else None,
             model_name=model_name if model_name else None,
@@ -294,6 +334,9 @@ class UnifiedConfigManager:
             decision_base_url=decision_base_url if decision_base_url else None,
             decision_model_name=decision_model_name if decision_model_name else None,
             decision_api_key=decision_api_key if decision_api_key else None,
+            reply_base_url=reply_base_url if reply_base_url else None,
+            reply_model_name=reply_model_name if reply_model_name else None,
+            reply_api_key=reply_api_key if reply_api_key else None,
             source=ConfigSource.ENV,
         )
         self._effective_config = None  # 清除缓存
@@ -355,6 +398,9 @@ class UnifiedConfigManager:
                 decision_base_url=config_data.get("decision_base_url"),
                 decision_model_name=config_data.get("decision_model_name"),
                 decision_api_key=config_data.get("decision_api_key"),
+                reply_base_url=config_data.get("reply_base_url"),
+                reply_model_name=config_data.get("reply_model_name"),
+                reply_api_key=config_data.get("reply_api_key"),
                 source=ConfigSource.FILE,
             )
             self._effective_config = None  # 清除缓存
@@ -388,6 +434,9 @@ class UnifiedConfigManager:
         decision_base_url: Optional[str] = None,
         decision_model_name: Optional[str] = None,
         decision_api_key: Optional[str] = None,
+        reply_base_url: Optional[str] = None,
+        reply_model_name: Optional[str] = None,
+        reply_api_key: Optional[str] = None,
         merge_mode: bool = True,
     ) -> bool:
         """
@@ -403,6 +452,9 @@ class UnifiedConfigManager:
             decision_base_url: 决策模型 Base URL（可选）
             decision_model_name: 决策模型名称（可选）
             decision_api_key: 决策模型 API Key（可选）
+            reply_base_url: 回复模型 Base URL（可选）
+            reply_model_name: 回复模型名称（可选）
+            reply_api_key: 回复模型 API Key（可选）
             merge_mode: 是否合并现有配置（True: 保留未提供的字段）
 
         Returns:
@@ -435,6 +487,14 @@ class UnifiedConfigManager:
             if decision_api_key is not None:
                 new_config["decision_api_key"] = decision_api_key
 
+            # 回复模型配置
+            if reply_base_url is not None:
+                new_config["reply_base_url"] = reply_base_url
+            if reply_model_name is not None:
+                new_config["reply_model_name"] = reply_model_name
+            if reply_api_key is not None:
+                new_config["reply_api_key"] = reply_api_key
+
             # 合并模式：保留现有文件中未提供的字段
             if merge_mode and self._config_path.exists():
                 try:
@@ -450,6 +510,9 @@ class UnifiedConfigManager:
                         "decision_base_url",
                         "decision_model_name",
                         "decision_api_key",
+                        "reply_base_url",
+                        "reply_model_name",
+                        "reply_api_key",
                     ]
                     for key in preserve_keys:
                         if key not in new_config and key in existing:
@@ -540,6 +603,9 @@ class UnifiedConfigManager:
             "decision_base_url",
             "decision_model_name",
             "decision_api_key",
+            "reply_base_url",
+            "reply_model_name",
+            "reply_api_key",
         ]
 
         for key in config_keys:
@@ -708,6 +774,9 @@ class UnifiedConfigManager:
             "decision_base_url": config.decision_base_url,
             "decision_model_name": config.decision_model_name,
             "decision_api_key": config.decision_api_key,
+            "reply_base_url": config.reply_base_url,
+            "reply_model_name": config.reply_model_name,
+            "reply_api_key": config.reply_api_key,
         }
 
 

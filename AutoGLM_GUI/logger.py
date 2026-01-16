@@ -63,7 +63,7 @@ def configure_logger(
         )
 
         # Separate error log file
-        error_file = str(log_path.parent / f"errors_{log_path.name.split('_', 1)[1]}")
+        error_file = str(log_path.parent / f"errors_{log_path.name}")
         logger.add(
             error_file,
             rotation="50 MB",

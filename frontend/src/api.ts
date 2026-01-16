@@ -651,6 +651,10 @@ export interface ConfigResponse {
   decision_base_url: string;
   decision_model_name: string;
   decision_api_key: string;
+  // 回复模型配置
+  reply_base_url?: string;
+  reply_model_name?: string;
+  reply_api_key?: string;
   // Agent 类型配置
   agent_type?: string;
   agent_config_params?: Record<string, unknown>;
@@ -667,6 +671,10 @@ export interface ConfigSaveRequest {
   decision_base_url?: string;
   decision_model_name?: string;
   decision_api_key?: string;
+  // 回复模型配置
+  reply_base_url?: string;
+  reply_model_name?: string;
+  reply_api_key?: string;
   // Agent 类型配置
   agent_type?: string;
   agent_config_params?: Record<string, unknown>;
@@ -1592,8 +1600,8 @@ export async function getDouyinMonitorLogs(
 export interface DouyinCommentVideoFilter {
   min_likes: number;
   max_likes: number;
-  max_days_ago: number;
-  sort_by: 'latest' | 'default';
+  publish_time: 'default' | 'day' | 'week' | 'half_year';
+  sort_by: 'latest' | 'most_liked' | 'default';
 }
 
 export interface DouyinCommentInteraction {
@@ -1610,6 +1618,8 @@ export interface DouyinCommentConfig {
   max_replies_per_video: number;
   min_replies_per_video: number;
   target_hot_comments: boolean;
+  target_question_comments: boolean;
+  target_regions: string[];
   reply_interval_min: number;
   reply_interval_max: number;
 }
@@ -1637,6 +1647,7 @@ export interface DouyinCommentTask {
   content: DouyinCommentContent;
   execution: DouyinCommentExecution;
   cron_expression: string | null;
+  end_time: string | null;
   status: 'enabled' | 'disabled' | 'running';
   created_at: string;
   updated_at: string;
@@ -1654,6 +1665,7 @@ export interface DouyinCommentTaskCreateRequest {
   content?: Partial<DouyinCommentContent>;
   execution?: Partial<DouyinCommentExecution>;
   cron_expression?: string;
+  end_time?: string;
   enabled?: boolean;
 }
 
@@ -1667,6 +1679,7 @@ export interface DouyinCommentTaskUpdateRequest {
   content?: Partial<DouyinCommentContent>;
   execution?: Partial<DouyinCommentExecution>;
   cron_expression?: string;
+  end_time?: string;
 }
 
 export interface DouyinCommentTaskListResponse {
@@ -1790,6 +1803,83 @@ export async function getAllDouyinCommentHistory(
   const res = await axios.get<DouyinCommentHistoryListResponse>(
     '/api/douyin/comment/history',
     { params: { limit } }
+  );
+  return res.data;
+}
+
+// ==================== Douyin Comment Stats API ====================
+
+export interface DouyinReplyStats {
+  total_replies: number;
+  unique_videos: number;
+  unique_users: number;
+  task_count?: number;
+}
+
+export interface DouyinReplyRecord {
+  id: number;
+  task_uuid: string;
+  video_author: string;
+  video_title: string;
+  replied_user: string;
+  original_comment: string;
+  reply_content: string;
+  reply_type: string;
+  replied_at: string;
+}
+
+export interface DouyinReplyListResponse {
+  records: DouyinReplyRecord[];
+  total: number;
+}
+
+export interface DouyinDailyStat {
+  date: string;
+  reply_count: number;
+  video_count: number;
+}
+
+export interface DouyinDailyStatsResponse {
+  stats: DouyinDailyStat[];
+}
+
+export async function getDouyinReplyStats(
+  taskUuid?: string,
+  days: number = 30
+): Promise<DouyinReplyStats> {
+  const params: Record<string, string | number> = { days };
+  if (taskUuid) params.task_uuid = taskUuid;
+  const res = await axios.get<DouyinReplyStats>(
+    '/api/douyin/comment/stats/replies',
+    { params }
+  );
+  return res.data;
+}
+
+export async function getDouyinReplyList(
+  taskUuid?: string,
+  days: number = 7,
+  limit: number = 100,
+  offset: number = 0
+): Promise<DouyinReplyListResponse> {
+  const params: Record<string, string | number> = { days, limit, offset };
+  if (taskUuid) params.task_uuid = taskUuid;
+  const res = await axios.get<DouyinReplyListResponse>(
+    '/api/douyin/comment/stats/replies/list',
+    { params }
+  );
+  return res.data;
+}
+
+export async function getDouyinDailyStats(
+  taskUuid?: string,
+  days: number = 7
+): Promise<DouyinDailyStatsResponse> {
+  const params: Record<string, string | number> = { days };
+  if (taskUuid) params.task_uuid = taskUuid;
+  const res = await axios.get<DouyinDailyStatsResponse>(
+    '/api/douyin/comment/stats/replies/daily',
+    { params }
   );
   return res.data;
 }

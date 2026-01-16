@@ -1,6 +1,0 @@
-2026/01/08-11:29:08.141 a97c Reusing MANIFEST D:\pptr\pptr\userData_user1\Default\Local Storage\leveldb/MANIFEST-000001
-2026/01/08-11:29:08.161 a97c Recovering log #6
-2026/01/08-11:29:08.168 a97c Reusing old log D:\pptr\pptr\userData_user1\Default\Local Storage\leveldb/000006.log 
-2026/01/08-11:30:08.192 724 Level-0 table #10: started
-2026/01/08-11:30:08.205 724 Level-0 table #10: 26120 bytes OK
-2026/01/08-11:30:08.210 724 Delete type=0 #6

@@ -7,6 +7,7 @@ import {
   Clock,
   MessageCircle,
   MessagesSquare,
+  BarChart3,
   type LucideIcon,
 } from 'lucide-react';
 import { useTranslation } from '../lib/i18n-context';
@@ -63,6 +64,12 @@ export function NavigationSidebar({ className }: NavigationSidebarProps) {
       icon: MessagesSquare,
       label: t.navigation.douyinComment || '抖音评论引流',
       path: '/douyin-comment',
+    },
+    {
+      id: 'douyin-stats',
+      icon: BarChart3,
+      label: t.navigation.douyinStats || '数据统计',
+      path: '/douyin-stats',
     },
     {
       id: 'logs',

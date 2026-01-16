@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Smartphone,
-  Settings,
   ChevronLeft,
   ChevronRight,
   Plug,
@@ -76,7 +75,7 @@ interface DeviceSidebarProps {
   devices: Device[];
   currentDeviceId: string;
   onSelectDevice: (deviceId: string) => void;
-  onOpenConfig: () => void;
+  onOpenConfig?: () => void;
   onConnectWifi: (deviceId: string) => void;
   onDisconnectWifi: (deviceId: string) => void;
 }
@@ -85,7 +84,6 @@ export function DeviceSidebar({
   devices,
   currentDeviceId,
   onSelectDevice,
-  onOpenConfig,
   onConnectWifi,
   onDisconnectWifi,
 }: DeviceSidebarProps) {

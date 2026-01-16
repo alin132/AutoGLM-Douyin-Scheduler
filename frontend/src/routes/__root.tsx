@@ -16,6 +16,7 @@ const configDialogState = {
   setOpen: null as ((open: boolean) => void) | null,
 };
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const triggerOpenConfig = () => {
   configDialogState.setOpen?.(true);
 };

@@ -13,6 +13,7 @@ import { Route as WorkflowsRouteImport } from './routes/workflows'
 import { Route as ScheduledTasksRouteImport } from './routes/scheduled-tasks'
 import { Route as LogsRouteImport } from './routes/logs'
 import { Route as HistoryRouteImport } from './routes/history'
+import { Route as DouyinStatsRouteImport } from './routes/douyin-stats'
 import { Route as DouyinCommentRouteImport } from './routes/douyin-comment'
 import { Route as DouyinAutoReplyRouteImport } from './routes/douyin-auto-reply'
 import { Route as ChatRouteImport } from './routes/chat'
@@ -37,6 +38,11 @@ const LogsRoute = LogsRouteImport.update({
 const HistoryRoute = HistoryRouteImport.update({
   id: '/history',
   path: '/history',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DouyinStatsRoute = DouyinStatsRouteImport.update({
+  id: '/douyin-stats',
+  path: '/douyin-stats',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DouyinCommentRoute = DouyinCommentRouteImport.update({
@@ -71,6 +77,7 @@ export interface FileRoutesByFullPath {
   '/chat': typeof ChatRoute
   '/douyin-auto-reply': typeof DouyinAutoReplyRoute
   '/douyin-comment': typeof DouyinCommentRoute
+  '/douyin-stats': typeof DouyinStatsRoute
   '/history': typeof HistoryRoute
   '/logs': typeof LogsRoute
   '/scheduled-tasks': typeof ScheduledTasksRoute
@@ -82,6 +89,7 @@ export interface FileRoutesByTo {
   '/chat': typeof ChatRoute
   '/douyin-auto-reply': typeof DouyinAutoReplyRoute
   '/douyin-comment': typeof DouyinCommentRoute
+  '/douyin-stats': typeof DouyinStatsRoute
   '/history': typeof HistoryRoute
   '/logs': typeof LogsRoute
   '/scheduled-tasks': typeof ScheduledTasksRoute
@@ -94,6 +102,7 @@ export interface FileRoutesById {
   '/chat': typeof ChatRoute
   '/douyin-auto-reply': typeof DouyinAutoReplyRoute
   '/douyin-comment': typeof DouyinCommentRoute
+  '/douyin-stats': typeof DouyinStatsRoute
   '/history': typeof HistoryRoute
   '/logs': typeof LogsRoute
   '/scheduled-tasks': typeof ScheduledTasksRoute
@@ -107,6 +116,7 @@ export interface FileRouteTypes {
     | '/chat'
     | '/douyin-auto-reply'
     | '/douyin-comment'
+    | '/douyin-stats'
     | '/history'
     | '/logs'
     | '/scheduled-tasks'
@@ -118,6 +128,7 @@ export interface FileRouteTypes {
     | '/chat'
     | '/douyin-auto-reply'
     | '/douyin-comment'
+    | '/douyin-stats'
     | '/history'
     | '/logs'
     | '/scheduled-tasks'
@@ -129,6 +140,7 @@ export interface FileRouteTypes {
     | '/chat'
     | '/douyin-auto-reply'
     | '/douyin-comment'
+    | '/douyin-stats'
     | '/history'
     | '/logs'
     | '/scheduled-tasks'
@@ -141,6 +153,7 @@ export interface RootRouteChildren {
   ChatRoute: typeof ChatRoute
   DouyinAutoReplyRoute: typeof DouyinAutoReplyRoute
   DouyinCommentRoute: typeof DouyinCommentRoute
+  DouyinStatsRoute: typeof DouyinStatsRoute
   HistoryRoute: typeof HistoryRoute
   LogsRoute: typeof LogsRoute
   ScheduledTasksRoute: typeof ScheduledTasksRoute
@@ -175,6 +188,13 @@ declare module '@tanstack/react-router' {
       path: '/history'
       fullPath: '/history'
       preLoaderRoute: typeof HistoryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/douyin-stats': {
+      id: '/douyin-stats'
+      path: '/douyin-stats'
+      fullPath: '/douyin-stats'
+      preLoaderRoute: typeof DouyinStatsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/douyin-comment': {
@@ -221,6 +241,7 @@ const rootRouteChildren: RootRouteChildren = {
   ChatRoute: ChatRoute,
   DouyinAutoReplyRoute: DouyinAutoReplyRoute,
   DouyinCommentRoute: DouyinCommentRoute,
+  DouyinStatsRoute: DouyinStatsRoute,
   HistoryRoute: HistoryRoute,
   LogsRoute: LogsRoute,
   ScheduledTasksRoute: ScheduledTasksRoute,

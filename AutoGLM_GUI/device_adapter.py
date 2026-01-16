@@ -199,7 +199,8 @@ def inject_device_protocol(
         ... }
         >>> inject_device_protocol(lambda did: devices.get(did, devices["phone_1"]))
     """
-    # TODO： 不应该依赖这种全部变量
+    # NOTE: 全局工厂替换是为了兼容 phone_agent 模块的现有设计。
+    # 如需临时替换，建议使用 DeviceProtocolContext 上下文管理器。
     global _original_factory
 
     # Save original factory if not already saved

@@ -135,7 +135,7 @@ def init_agent(request: InitRequest) -> dict:
             force=request.force,
         )
 
-        logger.warning(
+        logger.info(
             f"/api/init is deprecated. Agent of type '{request.agent_type}' initialized for device {device_id}. "
             f"Consider using auto-initialization instead."
         )
@@ -393,6 +393,9 @@ def get_config_endpoint() -> ConfigResponse:
         decision_base_url=effective_config.decision_base_url,
         decision_model_name=effective_config.decision_model_name,
         decision_api_key=effective_config.decision_api_key,
+        reply_base_url=effective_config.reply_base_url,
+        reply_model_name=effective_config.reply_model_name,
+        reply_api_key=effective_config.reply_api_key,
         conflicts=[
             {
                 "field": c.field,
@@ -436,6 +439,9 @@ def save_config_endpoint(request: ConfigSaveRequest) -> dict:
             decision_base_url=request.decision_base_url,
             decision_model_name=request.decision_model_name,
             decision_api_key=request.decision_api_key,
+            reply_base_url=request.reply_base_url,
+            reply_model_name=request.reply_model_name,
+            reply_api_key=request.reply_api_key,
             merge_mode=True,
         )
 

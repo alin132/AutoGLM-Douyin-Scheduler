@@ -156,7 +156,7 @@ def _sync_list_devices() -> str:
 
     # 如果轮询未启动，执行同步刷新
     if not device_manager._poll_thread or not device_manager._poll_thread.is_alive():
-        logger.warning("Polling not started, performing sync refresh")
+        logger.debug("Polling not started, performing sync refresh")
         device_manager.force_refresh()
 
     managed_devices = device_manager.get_devices()

@@ -58,3 +58,6 @@ docs/.docusaurus/
 # IDE
 .vscode/
 .idea/
+
+# Browser user data (puppeteer)
+pptr/

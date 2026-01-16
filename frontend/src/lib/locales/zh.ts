@@ -47,12 +47,17 @@ export const zh = {
     maxStepsHint: '单次任务最大执行步数（1-1000）',
     visionModelTab: '视觉模型',
     decisionModelTab: '决策模型',
+    replyModelTab: '回复模型',
     selectDecisionPreset: '选择决策模型预设',
     decisionBaseUrl: '决策模型 Base URL',
     decisionApiKey: '决策模型 API Key',
     decisionModelName: '决策模型名称',
     decisionModelHint:
       '决策模型用于分层代理的规划层。使用分层代理模式时必须配置决策模型。',
+    replyModelDesc: '用于生成抖音评论回复内容的模型',
+    replyBaseUrl: '回复模型 Base URL',
+    replyApiKey: '回复模型 API Key',
+    replyModelName: '回复模型名称',
   },
   deviceSidebar: {
     devices: '设备',
@@ -276,6 +281,7 @@ export const zh = {
     scheduledTasks: '定时任务',
     douyinAutoReply: '抖音自动回复',
     douyinComment: '抖音评论引流',
+    douyinStats: '数据统计',
     logs: '日志',
   },
   logs: {

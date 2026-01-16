@@ -88,9 +88,15 @@ const SelectContent = ({
 }) => {
   return (
     <PopoverContent
-      className={cn('w-[var(--radix-popover-trigger-width)] p-1', className)}
+      className={cn('w-[var(--radix-popover-trigger-width)] p-0', className)}
+      avoidCollisions={false}
     >
-      {children}
+      <div
+        className="p-1 overflow-y-auto scrollbar-thin"
+        style={{ maxHeight: '200px' }}
+      >
+        {children}
+      </div>
     </PopoverContent>
   );
 };
