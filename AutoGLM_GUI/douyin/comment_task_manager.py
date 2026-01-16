@@ -581,23 +581,13 @@ class DouyinCommentTaskManager(BaseTaskManager):
             else:
                 find_instruction = "随便选一条评论"
             
-            return f"""点击评论图标进入评论区，然后：
-
-1. {find_instruction}
-2. 如果有"展开N条回复"就点击展开，没有就跳过
-3. 快速扫一眼当前屏幕的回复，看有没有「我」标签
-4. 结果：
-   - 有「我」→ 报告"已回复"，停止
-   - 没有「我」或没看到 → 点击"回复"，输入框弹出后停止
+            return f"""点击评论图标进入评论区，{find_instruction}，点击"回复"按钮让输入框弹出，然后停止。
 
 报告格式：
 ---
-状态：[已回复/待回复]
 目标用户：[评论者昵称]
 原评论：[评论内容]
----
-
-【禁止】不要滚动查看更多！扫一眼没看到「我」就直接点回复！"""
+---"""
 
     def _build_send_reply_prompt(self, reply_content: str) -> str:
         """构建发送回复的指令."""
