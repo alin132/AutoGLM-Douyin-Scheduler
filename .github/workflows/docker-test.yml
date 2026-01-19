@@ -8,8 +8,6 @@ on:
       - 'docker-compose.yml'
       - '.dockerignore'
       - 'AutoGLM_GUI/**'
-      - 'phone_agent/**'
-      - 'mai_agent/**'
       - 'frontend/**'
       - 'pyproject.toml'
       - '.github/workflows/docker-test.yml'

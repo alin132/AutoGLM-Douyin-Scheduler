@@ -65,9 +65,9 @@ AutoGLM 手机助手的现代化 Web 图形界面 - 让 AI 自动化操作 Andro
 
 | 操作系统 | 下载链接 | 说明 |
 |---------|---------|------|
-| 🪟 **Windows** (x64) | [📦 下载便携版 EXE](https://github.com/suyiiyii/AutoGLM-GUI/releases/download/v1.5.0/AutoGLM.GUI.1.5.0.exe) | 适用于 Windows 10/11，免安装 |
-| 🍎 **macOS** (Apple Silicon) | [📦 下载 DMG](https://github.com/suyiiyii/AutoGLM-GUI/releases/download/v1.5.0/AutoGLM.GUI-1.5.0-arm64.dmg) | 适用于 M 芯片 Mac |
-| 🐧 **Linux** (x64) | [📦 下载 AppImage](https://github.com/suyiiyii/AutoGLM-GUI/releases/download/v1.5.0/AutoGLM.GUI-1.5.0.AppImage) \| [deb](https://github.com/suyiiyii/AutoGLM-GUI/releases/download/v1.5.0/autoglm-gui_1.5.0_amd64.deb) \| [tar.gz](https://github.com/suyiiyii/AutoGLM-GUI/releases/download/v1.5.0/autoglm-gui-1.5.0.tar.gz) | 通用格式，支持主流发行版 |
+| 🪟 **Windows** (x64) | [📦 下载便携版 EXE](https://github.com/suyiiyii/AutoGLM-GUI/releases/download/v1.4.1/AutoGLM.GUI.1.4.1.exe) | 适用于 Windows 10/11，免安装 |
+| 🍎 **macOS** (Apple Silicon) | [📦 下载 DMG](https://github.com/suyiiyii/AutoGLM-GUI/releases/download/v1.4.1/AutoGLM.GUI-1.4.1-arm64.dmg) | 适用于 M 芯片 Mac |
+| 🐧 **Linux** (x64) | [📦 下载 AppImage](https://github.com/suyiiyii/AutoGLM-GUI/releases/download/v1.4.1/AutoGLM.GUI-1.4.1.AppImage) \| [deb](https://github.com/suyiiyii/AutoGLM-GUI/releases/download/v1.4.1/autoglm-gui_1.4.1_amd64.deb) \| [tar.gz](https://github.com/suyiiyii/AutoGLM-GUI/releases/download/v1.4.1/autoglm-gui-1.4.1.tar.gz) | 通用格式，支持主流发行版 |
 
 </div>
 
@@ -80,6 +80,15 @@ AutoGLM 手机助手的现代化 Web 图形界面 - 让 AI 自动化操作 Andro
   - **tar.gz**: 便携版，解压后运行 `./AutoGLM\ GUI/autoglm-gui`
 
 > 💡 **提示**: 桌面版已内置所有依赖（Python、ADB 等），无需手动配置环境。首次运行时需配置模型服务 API。
+
+**自动更新：**
+
+AutoGLM GUI 桌面版支持自动更新功能：
+
+- **🪟 Windows 安装版**：启动时自动检测更新，下载完成后退出时自动安装
+- **🍎 macOS DMG**：启动时自动检测更新，下载完成后提示用户重启（未签名应用可能需要手动允许）
+- **🐧 Linux AppImage**：启动时自动检测更新（需配合 [AppImageLauncher](https://github.com/TheAssassin/AppImageLauncher)）
+- **便携版（Windows EXE/Linux tar.gz）**：不支持自动更新，请手动下载新版本
 
 ---
 
@@ -572,6 +581,48 @@ docker run -d -p 9000:8000 \
 curl http://localhost:8000/api/health
 ```
 
+## 🤝 如何贡献
+
+我们热烈欢迎社区贡献！无论是修复 bug、添加新功能、改进文档，还是分享使用经验，都对项目有重要价值。
+
+### 🎯 快速开始贡献
+
+1. **查看置顶 Issue** - [🎯 Start Here: 如何贡献 / 认领任务 / 本地跑起来](https://github.com/suyiiyii/AutoGLM-GUI/issues/170)
+2. **阅读贡献指南** - 详细步骤请参考 [CONTRIBUTING.md](./CONTRIBUTING.md)
+3. **认领任务** - 在感兴趣的 Issue 下评论 `/assign me`
+
+### 💡 贡献方式
+
+- 🐛 **修复 Bug** - 查找标记为 `bug` 的 Issue
+- ✨ **添加功能** - 实现标记为 `enhancement` 的需求
+- 📖 **改进文档** - 修正错误、补充说明、添加示例
+- 🧪 **添加测试** - 提升代码质量和测试覆盖率
+- 🌍 **翻译文档** - 帮助更多语言的用户使用
+
+### 🏷️ 新手友好任务
+
+如果你是第一次贡献开源项目，可以从这些任务开始：
+
+- 查找标记为 [`good first issue`](https://github.com/suyiiyii/AutoGLM-GUI/labels/good%20first%20issue) 的 Issue
+- 改进文档（修正拼写错误、补充说明）
+- 测试软件并报告使用体验
+
+### 📚 参考资源
+
+| 文档 | 说明 |
+|------|------|
+| [CONTRIBUTING.md](./CONTRIBUTING.md) | 完整的贡献指南（环境配置、开发流程、PR 规范） |
+| [CLAUDE.md](./CLAUDE.md) | 技术架构文档（代码结构、关键实现细节） |
+| [Issues](https://github.com/suyiiyii/AutoGLM-GUI/issues) | 查看和认领任务 |
+
+### 💬 交流讨论
+
+- 💭 在 Issue 中讨论想法和问题
+- 🎮 加入 [QQ 交流群](https://qm.qq.com/q/J5eAs9tn0W)
+- 📝 [创建新 Issue](https://github.com/suyiiyii/AutoGLM-GUI/issues/new/choose) 报告问题或提出建议
+
+感谢每一位贡献者，你们让 AutoGLM-GUI 变得更好！🎉
+
 ## 📝 开源协议
 
 Apache License 2.0
@@ -579,7 +630,7 @@ Apache License 2.0
 
 ### 许可证说明
 
-AutoGLM-GUI 打包了 ADB Keyboard APK (`com.android.adbkeyboard`)，该组件使用 GPL-2.0 许可证。ADB Keyboard 组件作为独立工具使用，不影响 AutoGLM-GUI 本身的 MIT 许可。
+AutoGLM-GUI 打包了 ADB Keyboard APK (`com.android.adbkeyboard`)，该组件使用 GPL-2.0 许可证。ADB Keyboard 组件作为独立工具使用，不影响 AutoGLM-GUI 本身的 Apache 2.0 许可。
 
 详见：`AutoGLM_GUI/resources/apks/ADBKeyBoard.LICENSE.txt`
 

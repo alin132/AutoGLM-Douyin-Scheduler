@@ -7,7 +7,7 @@ a decision model for planning and autoglm-phone for execution.
 import asyncio
 import json
 import threading
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, AsyncGenerator
 
 from agents import Agent, Runner, SQLiteSession, function_tool
 
@@ -216,7 +216,7 @@ def _sync_chat(device_id: str, message: str) -> str:
                 # 重置 agent 确保干净状态
                 agent.reset()
 
-                result = agent.run(message)
+                result = agent.run(message)  # type: ignore[misc]
                 steps = agent.step_count
 
                 # 检查是否达到步数限制
@@ -384,7 +384,7 @@ class LayeredAgentRequest(BaseModel):
 
 
 @router.post("/api/layered-agent/chat")
-async def layered_agent_chat(request: LayeredAgentRequest):
+async def layered_agent_chat(request: LayeredAgentRequest) -> StreamingResponse:
     """
     Layered agent chat API with streaming execution steps.
 
@@ -407,7 +407,7 @@ async def layered_agent_chat(request: LayeredAgentRequest):
     from AutoGLM_GUI.history_manager import history_manager
     from AutoGLM_GUI.models.history import ConversationRecord
 
-    async def event_generator():
+    async def event_generator() -> AsyncGenerator[str, None]:
         start_time = datetime.now()
         final_output = ""
         final_success = False
@@ -418,11 +418,12 @@ async def layered_agent_chat(request: LayeredAgentRequest):
             session_id = request.session_id or request.device_id or "default"
             session = _get_or_create_session(session_id)
 
-            # Run the agent with streaming and session for memory
+            effective_config = config_manager.get_effective_config()
+
             result = Runner.run_streamed(
                 agent,
                 request.message,
-                max_turns=50,
+                max_turns=effective_config.layered_max_turns,
                 session=session,
             )
 
@@ -663,7 +664,7 @@ class AbortSessionRequest(BaseModel):
 
 
 @router.post("/api/layered-agent/abort")
-def abort_session(request: AbortSessionRequest):
+def abort_session(request: AbortSessionRequest) -> dict[str, Any]:
     """
     Abort a running layered agent session.
 
@@ -714,7 +715,7 @@ class ResetSessionRequest(BaseModel):
 
 
 @router.post("/api/layered-agent/reset")
-def reset_session(request: ResetSessionRequest):
+def reset_session(request: ResetSessionRequest) -> dict[str, Any]:
     """
     Reset/clear a session to forget conversation history.
 

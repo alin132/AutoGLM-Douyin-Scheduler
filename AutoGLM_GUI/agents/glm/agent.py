@@ -1,6 +1,6 @@
 import json
 import traceback
-from typing import Any, Callable, cast
+from typing import Any, Callable
 
 from openai import OpenAI
 
@@ -90,7 +90,7 @@ class GLMAgent:
         on_thinking_chunk: Callable[[str], None] | None = None,
     ) -> tuple[str, str, str]:
         stream = self.openai_client.chat.completions.create(
-            messages=cast(Any, messages),
+            messages=messages,  # type: ignore[arg-type]
             model=self.model_config.model_name,
             max_tokens=self.model_config.max_tokens,
             temperature=self.model_config.temperature,
@@ -193,7 +193,12 @@ class GLMAgent:
             )
         else:
             screen_info = MessageBuilder.build_screen_info(current_app)
-            text_content = f"** Screen Info **\n\n{screen_info}"
+            # 如果有新的用户消息（多轮对话场景），把它加入消息中
+            if user_prompt:
+                text_content = f"{user_prompt}\n\n** Screen Info **\n\n{screen_info}"
+            else:
+                # 继续执行当前任务，只需要屏幕信息
+                text_content = f"** Screen Info **\n\n{screen_info}"
 
             self._context.append(
                 MessageBuilder.create_user_message(

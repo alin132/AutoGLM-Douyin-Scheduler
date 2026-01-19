@@ -5,14 +5,48 @@ with a Mock Device Agent and Mock LLM server running on the host machine.
 
 Prerequisites:
     - Docker is installed and running
+
+Tests will be automatically skipped if Docker is not available.
 """
 
+import shutil
 import subprocess
 import time
 from pathlib import Path
 
 import httpx
 import pytest
+
+
+def _is_docker_available() -> bool:
+    """Check if Docker is installed and running.
+
+    Returns:
+        True if Docker command exists and docker info succeeds
+    """
+    # Check if docker command exists
+    if not shutil.which("docker"):
+        return False
+
+    # Check if docker daemon is running
+    try:
+        result = subprocess.run(
+            ["docker", "info"],
+            capture_output=True,
+            timeout=5,
+        )
+        return result.returncode == 0
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return False
+
+
+# Skip all tests in this module if Docker is not available
+pytestmark = [
+    pytest.mark.skipif(
+        not _is_docker_available(),
+        reason="Docker is not installed or not running. Skip Docker E2E tests.",
+    )
+]
 
 
 @pytest.fixture
@@ -41,11 +75,27 @@ def docker_container(mock_agent_server: str, mock_llm_server: str):
     time.sleep(0.5)
 
     print(f"[Docker E2E] Building Docker image: {image_name}")
-    subprocess.run(
-        ["docker", "build", "-t", image_name, "."],
-        check=True,
-        cwd=Path(__file__).parent.parent.parent,
-    )
+    # Retry Docker build up to 3 times to handle transient Docker Hub timeouts
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            subprocess.run(
+                ["docker", "build", "-t", image_name, "."],
+                check=True,
+                cwd=Path(__file__).parent.parent.parent,
+            )
+            break  # Success, exit retry loop
+        except subprocess.CalledProcessError:
+            if attempt < max_retries - 1:
+                wait_time = (attempt + 1) * 5  # Exponential backoff: 5s, 10s, 15s
+                print(
+                    f"[Docker E2E] Docker build failed (attempt {attempt + 1}/{max_retries}), "
+                    f"retrying in {wait_time}s..."
+                )
+                time.sleep(wait_time)
+            else:
+                print(f"[Docker E2E] Docker build failed after {max_retries} attempts")
+                raise
 
     # Use host network mode for simplicity (works on Linux and macOS with Docker Desktop)
     remote_url = mock_agent_server

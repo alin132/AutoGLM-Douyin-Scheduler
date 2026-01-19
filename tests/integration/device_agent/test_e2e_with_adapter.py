@@ -1,19 +1,14 @@
-"""End-to-end test demonstrating non-invasive testing with RemoteDevice.
+"""End-to-end test demonstrating testing with RemoteDevice.
 
 This test shows how to:
 1. Start a Mock Device Agent server
-2. Inject RemoteDevice into agent via DeviceProtocolAdapter
-3. Run agent with real LLM
+2. Use RemoteDevice to communicate with the mock server
+3. Run agent with mock LLM
 4. Assert that the Mock Agent received expected commands
-
-This is completely non-invasive - no modifications to AutoGLM-GUI code.
 """
-
-from typing import cast
 
 import pytest
 
-from AutoGLM_GUI.device_adapter import DeviceProtocolAdapter, DeviceProtocolContext
 from AutoGLM_GUI.devices.remote_device import RemoteDevice
 
 
@@ -53,17 +48,13 @@ class TestE2EWithAgent:
 
         remote_device = RemoteDevice("mock_device_001", mock_agent_server)
 
-        with DeviceProtocolContext(
-            get_device=lambda _: remote_device,
-            default_device_id="mock_device_001",
-        ):
-            agent = GLMAgent(
-                model_config=model_config,
-                agent_config=agent_config,
-                device=remote_device,
-            )
+        agent = GLMAgent(
+            model_config=model_config,
+            agent_config=agent_config,
+            device=remote_device,
+        )
 
-            agent.run("点击屏幕下方的消息按钮")
+        agent.run("点击屏幕下方的消息按钮")
 
         # Verify mock LLM was called twice (tap + finish)
         mock_llm_client.assert_request_count(2)
@@ -82,26 +73,20 @@ class TestE2EWithAgent:
 
 class TestE2EWithoutLLM:
     """
-    E2E tests that don't require LLM - test the injection mechanism.
+    E2E tests that don't require LLM - test RemoteDevice directly.
     """
 
-    def test_remote_device_injection_works(
+    def test_remote_device_works(
         self, mock_agent_server: str, test_client, sample_test_case
     ):
-        """Test that RemoteDevice can be injected via adapter."""
+        """Test that RemoteDevice can communicate with mock server."""
         test_client.load_scenario(str(sample_test_case))
         remote_device = RemoteDevice("mock_device_001", mock_agent_server)
 
-        with DeviceProtocolContext(
-            get_device=lambda _: remote_device,
-            default_device_id="mock_device_001",
-        ) as adapter:
-            factory = cast(DeviceProtocolAdapter, adapter)
+        ss = remote_device.get_screenshot()
+        assert ss.width > 0
 
-            ss = factory.get_screenshot("mock_device_001")
-            assert ss.width > 0
-
-            factory.tap(600, 2590, "mock_device_001")
+        remote_device.tap(600, 2590)
 
         commands = test_client.get_actions()
         assert any(c["action"] == "screenshot" for c in commands)
@@ -111,19 +96,11 @@ class TestE2EWithoutLLM:
 
     def test_multiple_devices(self, mock_agent_server: str, test_client):
         """Test that multiple remote devices can be managed."""
-        devices = {
-            "device_1": RemoteDevice("device_1", mock_agent_server),
-            "device_2": RemoteDevice("device_2", mock_agent_server),
-        }
+        device_1 = RemoteDevice("device_1", mock_agent_server)
+        device_2 = RemoteDevice("device_2", mock_agent_server)
 
-        with DeviceProtocolContext(
-            get_device=lambda did: devices.get(did or "device_1", devices["device_1"]),
-            default_device_id="device_1",
-        ) as adapter:
-            factory = cast(DeviceProtocolAdapter, adapter)
-
-            factory.tap(100, 200, "device_1")
-            factory.tap(300, 400, "device_2")
+        device_1.tap(100, 200)
+        device_2.tap(300, 400)
 
         commands = test_client.get_commands()
 
@@ -174,18 +151,14 @@ class TestE2EWithMockLLM:
         remote_device = RemoteDevice("mock_device_001", mock_agent_server)
 
         # Run agent with mock LLM and mock device
-        with DeviceProtocolContext(
-            get_device=lambda _: remote_device,
-            default_device_id="mock_device_001",
-        ):
-            agent = GLMAgent(
-                model_config=model_config,
-                agent_config=agent_config,
-                device=remote_device,
-            )
+        agent = GLMAgent(
+            model_config=model_config,
+            agent_config=agent_config,
+            device=remote_device,
+        )
 
-            # Execute task
-            agent.run("点击屏幕下方的消息按钮")
+        # Execute task
+        agent.run("点击屏幕下方的消息按钮")
 
         # Verify mock LLM was called twice (tap + finish)
         mock_llm_client.assert_request_count(2)

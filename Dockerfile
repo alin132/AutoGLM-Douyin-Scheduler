@@ -41,8 +41,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy Python project files
 COPY pyproject.toml README.md ./
 COPY AutoGLM_GUI ./AutoGLM_GUI
-COPY phone_agent ./phone_agent
-COPY mai_agent ./mai_agent
 COPY scrcpy-server-v3.3.3 ./scrcpy-server-v3.3.3
 
 # Copy frontend build output from Stage 1 BEFORE pip install

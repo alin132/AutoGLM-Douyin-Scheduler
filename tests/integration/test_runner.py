@@ -1,14 +1,14 @@
 """Test runner for Agent state machine integration tests.
 
 This module provides the TestRunner that orchestrates the test execution,
-injecting the mock device via DeviceProtocol and running the Agent through test scenarios.
+using the mock device via DeviceProtocol and running the Agent through test scenarios.
 """
 
 from pathlib import Path
 from typing import Any
 
-from AutoGLM_GUI.device_adapter import DeviceProtocolContext
 from AutoGLM_GUI.devices.mock_device import MockDevice
+from AutoGLM_GUI.config import AgentConfig, ModelConfig
 from tests.integration.state_machine import (
     StateMachine,
     TestFailedError,
@@ -23,7 +23,7 @@ class TestRunner:
     The runner:
     1. Loads test case from YAML
     2. Creates MockDevice (DeviceProtocol implementation)
-    3. Injects via DeviceProtocolAdapter
+    3. Creates GLMAgent with the mock device
     4. Runs the Agent with the test instruction
     5. Verifies the final state
     """
@@ -54,8 +54,8 @@ class TestRunner:
 
     def run(
         self,
-        model_config: Any = None,
-        agent_config: Any = None,
+        model_config: ModelConfig | None = None,
+        agent_config: AgentConfig | None = None,
     ) -> dict[str, Any]:
         """
         Run the test.
@@ -79,7 +79,6 @@ class TestRunner:
         instruction = self.instruction
         # Import here to avoid circular imports
         from AutoGLM_GUI.agents.glm.agent import GLMAgent
-        from AutoGLM_GUI.config import AgentConfig, ModelConfig
 
         # Create configs if not provided
         if model_config is None:
@@ -111,38 +110,34 @@ class TestRunner:
         print("[TestRunner] Starting test execution...")
         print("=" * 60 + "\n")
 
-        with DeviceProtocolContext(
-            get_device=lambda _: mock_device,
-            default_device_id="mock_device",
-        ):
-            try:
-                # Create and run agent
-                agent = GLMAgent(
-                    model_config=model_config,
-                    agent_config=agent_config,
-                    device=mock_device,
+        try:
+            # Create and run agent with mock device
+            agent = GLMAgent(
+                model_config=model_config,
+                agent_config=agent_config,
+                device=mock_device,
+            )
+
+            result_message = agent.run(instruction)
+
+            if result_message == "Max steps reached":
+                state_machine.failure_reason = (
+                    f"Agent exceeded max steps ({self.max_steps}) without completing task. "
+                    f"Final state: {state_machine.current_state_id}"
                 )
+                print(f"\n[TestRunner] Test FAILED: {state_machine.failure_reason}")
+            else:
+                state_machine.handle_finish(result_message)
 
-                result_message = agent.run(instruction)
+        except TestFailedError as e:
+            print(f"\n[TestRunner] Test failed with error: {e}")
 
-                if result_message == "Max steps reached":
-                    state_machine.failure_reason = (
-                        f"Agent exceeded max steps ({self.max_steps}) without completing task. "
-                        f"Final state: {state_machine.current_state_id}"
-                    )
-                    print(f"\n[TestRunner] Test FAILED: {state_machine.failure_reason}")
-                else:
-                    state_machine.handle_finish(result_message)
+        except Exception as e:
+            state_machine.failure_reason = f"Unexpected error: {e}"
+            print(f"\n[TestRunner] Unexpected error: {e}")
+            import traceback
 
-            except TestFailedError as e:
-                print(f"\n[TestRunner] Test failed with error: {e}")
-
-            except Exception as e:
-                state_machine.failure_reason = f"Unexpected error: {e}"
-                print(f"\n[TestRunner] Unexpected error: {e}")
-                import traceback
-
-                traceback.print_exc()
+            traceback.print_exc()
 
         result = state_machine.get_result()
         self._print_result(result)

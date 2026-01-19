@@ -1,12 +1,11 @@
 import queue
 import threading
-import typing
 from contextlib import contextmanager
-from typing import Any, Callable, Iterator, Optional
+from typing import Any, Callable, Iterator, Optional, TYPE_CHECKING
 
 from AutoGLM_GUI.agents.events import AgentEvent, AgentEventType
 
-if typing.TYPE_CHECKING:
+if TYPE_CHECKING:
     from AutoGLM_GUI.agents.protocols import BaseAgent
 
 
@@ -76,7 +75,7 @@ class AgentStepStreamer:
     def _start_worker(self) -> None:
         """启动 worker 线程."""
 
-        def worker():
+        def worker() -> None:
             try:
                 # 检查停止事件
                 if self._stop_event.is_set():
@@ -87,7 +86,7 @@ class AgentStepStreamer:
                 # 假设 agent 有 _thinking_callback 属性
                 original_callback = getattr(self._agent, "_thinking_callback", None)
 
-                def on_thinking(chunk: str):
+                def on_thinking(chunk: str) -> None:
                     self._event_queue.put(
                         (AgentEventType.THINKING.value, {"chunk": chunk})
                     )
@@ -99,9 +98,14 @@ class AgentStepStreamer:
 
                 try:
                     # 执行 step 循环
+                    # 使用会话级别的标记，而不是 agent.step_count
+                    # 这样每次新对话开始时，第一步都会传递 task
+                    is_first_in_session = True
                     while not self._stop_event.is_set():
-                        is_first = self._agent.step_count == 0
-                        result = self._agent.step(self._task if is_first else None)
+                        result = self._agent.step(
+                            self._task if is_first_in_session else None
+                        )
+                        is_first_in_session = False
 
                         # 发射 step 事件
                         self._event_queue.put(

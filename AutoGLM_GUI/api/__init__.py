@@ -7,6 +7,8 @@ from contextlib import asynccontextmanager, suppress
 from importlib.resources import files
 from pathlib import Path
 
+from typing import AsyncGenerator
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -79,12 +81,28 @@ def _get_static_dir() -> Path | None:
 def create_app() -> FastAPI:
     """Build the FastAPI app with routers and static assets."""
 
+    # Configure logging from environment variables (for reload mode)
+    # In reload mode, the subprocess imports this module directly, bypassing __main__.py
+    # So we need to read log config from environment variables set by the parent process
+    import os
+
+    log_level = os.getenv("AUTOGLM_LOG_LEVEL", "INFO")
+    log_file = (
+        None
+        if os.getenv("AUTOGLM_NO_LOG_FILE")
+        else os.getenv("AUTOGLM_LOG_FILE", "logs/autoglm_{time:YYYY-MM-DD}.log")
+    )
+
+    from AutoGLM_GUI.logger import configure_logger
+
+    configure_logger(console_level=log_level, log_file=log_file)
+
     # Create MCP ASGI app
     mcp_app = mcp.get_mcp_asgi_app()
 
     # Define combined lifespan
     @asynccontextmanager
-    async def combined_lifespan(app: FastAPI):
+    async def combined_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         """Combine app startup logic with MCP lifespan."""
         # App startup
         qr_cleanup_task = asyncio.create_task(qr_pairing_manager.cleanup_expired_sessions())

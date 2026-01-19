@@ -4,6 +4,8 @@ import re
 
 from pydantic import BaseModel, field_validator
 
+from AutoGLM_GUI.device_metadata_manager import DISPLAY_NAME_MAX_LENGTH
+
 
 class InitRequest(BaseModel):
     device_id: str  # Device ID (required)
@@ -274,6 +276,7 @@ class DeviceResponse(BaseModel):
     connection_type: str
     state: str
     is_available_only: bool
+    display_name: str | None = None
     agent: AgentStatusResponse | None = None
 
 
@@ -295,6 +298,9 @@ class ConfigResponse(BaseModel):
 
     # Agent 执行配置
     default_max_steps: int = 100  # 单次任务最大执行步数
+
+    # 分层代理配置
+    layered_max_turns: int = 50  # 分层代理模式的最大轮次
 
     # 决策模型配置（用于分层代理）
     decision_base_url: str | None = None
@@ -323,6 +329,9 @@ class ConfigSaveRequest(BaseModel):
     # Agent 执行配置
     default_max_steps: int | None = None  # 单次任务最大执行步数
 
+    # 分层代理配置
+    layered_max_turns: int | None = None  # 分层代理模式的最大轮次
+
     # 决策模型配置（用于分层代理）
     decision_base_url: str | None = None
     decision_model_name: str | None = None
@@ -343,6 +352,15 @@ class ConfigSaveRequest(BaseModel):
             raise ValueError("default_max_steps must be positive")
         if v > 1000:
             raise ValueError("default_max_steps must be <= 1000")
+        return v
+
+    @field_validator("layered_max_turns")
+    @classmethod
+    def validate_layered_max_turns(cls, v: int | None) -> int | None:
+        if v is None:
+            return v
+        if v < 1:
+            raise ValueError("layered_max_turns must be >= 1")
         return v
 
     @field_validator("base_url")
@@ -712,6 +730,17 @@ class ReinitAllAgentsResponse(BaseModel):
 # History Models
 
 
+class MessageRecordResponse(BaseModel):
+    """对话消息响应."""
+
+    role: str  # "user" | "assistant"
+    content: str
+    timestamp: str
+    thinking: str | None = None
+    action: dict | None = None
+    step: int | None = None
+
+
 class HistoryRecordResponse(BaseModel):
     """历史记录条目响应."""
 
@@ -726,6 +755,7 @@ class HistoryRecordResponse(BaseModel):
     source: str
     source_detail: str
     error_message: str | None
+    messages: list[MessageRecordResponse] = []
 
 
 class HistoryListResponse(BaseModel):
@@ -814,3 +844,74 @@ class ScheduledTaskListResponse(BaseModel):
     """定时任务列表响应."""
 
     tasks: list[ScheduledTaskResponse]
+
+
+class DeleteResponse(BaseModel):
+    success: bool
+    message: str
+
+
+class ResetResponse(BaseModel):
+    success: bool
+    message: str
+    device_id: str
+
+
+class ConfigSaveResponse(BaseModel):
+    success: bool
+    message: str
+    warnings: list[str] | None = None
+    destroyed_agents: int
+
+
+class InitResponse(BaseModel):
+    success: bool
+    message: str
+    device_id: str
+    agent_type: str
+
+
+class StreamResetResponse(BaseModel):
+    success: bool
+    message: str
+    device_id: str | None = None
+
+
+class EnableDisableResponse(BaseModel):
+    success: bool
+    message: str
+    task_id: str
+    enabled: bool
+
+
+# Device Name Models
+
+
+class DeviceNameUpdateRequest(BaseModel):
+    """更新设备显示名称请求."""
+
+    display_name: str | None
+
+    @field_validator("display_name")
+    @classmethod
+    def validate_display_name(cls, v: str | None) -> str | None:
+        """验证 display_name."""
+        if v is None:
+            return v
+        v = v.strip()
+        if not v:
+            return None
+        if len(v) > DISPLAY_NAME_MAX_LENGTH:
+            raise ValueError(
+                f"display_name too long (max {DISPLAY_NAME_MAX_LENGTH} characters)"
+            )
+        return v
+
+
+class DeviceNameResponse(BaseModel):
+    """设备显示名称响应."""
+
+    success: bool
+    serial: str
+    display_name: str | None = None
+    error: str | None = None

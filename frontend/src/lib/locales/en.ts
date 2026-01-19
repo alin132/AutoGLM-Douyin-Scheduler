@@ -191,6 +191,17 @@ export const en = {
     increaseWidth: 'Increase width',
     showWidthControls: 'Show width controls',
     hideWidthControls: 'Hide width controls',
+    videoUnavailableWarning: 'Video streaming is unavailable',
+    requireHttpsOrLocalhost:
+      'Video streaming requires HTTPS or localhost. Consider downloading the desktop app for full functionality.',
+    browserNotSupported:
+      'Current browser does not support WebCodecs API. Please use latest Chrome or Edge browser.',
+    decoderInitFailed: 'Video decoder initialization failed',
+    codecNotSupported: 'Device codec not supported',
+    unknownError: 'Unknown error',
+    downloadElectron: 'Download Desktop App',
+    videoStreamWarning:
+      'Video streaming may be unavailable, attempting connection...',
   },
   deviceCard: {
     unknownDevice: 'Unknown Device',
@@ -217,6 +228,14 @@ export const en = {
     deleteDeviceTitle: 'Delete Device',
     deleteDeviceContent:
       'Are you sure you want to delete this device? This will disconnect the device.',
+    editName: 'Edit device name',
+    editNameDialogTitle: 'Edit Device Name',
+    editNameDialogDescription: 'Set a custom name for this device',
+    deviceNameLabel: 'Device Name',
+    deviceNamePlaceholder: 'Enter custom name (leave empty to use default)',
+    deviceSerialLabel: 'Serial Number',
+    saveNameSuccess: 'Device name updated successfully',
+    saveNameError: 'Failed to update device name',
     statusTooltip: {
       title: 'Current status: ',
       idle: 'Idle',
@@ -350,6 +369,13 @@ export const en = {
     loadMore: 'Load More',
     loading: 'Loading...',
     deleteConfirm: 'Delete this record?',
+    detailTitle: 'Conversation Detail',
+    taskLabel: 'Task',
+    stepLabel: 'Step {step}',
+    thinkingLabel: 'Thinking',
+    actionLabel: 'Action',
+    noMessages: 'No detailed message records',
+    resultLabel: 'Result',
   },
   scheduledTasks: {
     title: 'Scheduled Tasks',

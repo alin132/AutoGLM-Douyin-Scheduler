@@ -266,7 +266,7 @@ class ElectronBuilder:
         """构建 Electron 应用"""
         print_step("安装 Electron 依赖", 7, 6)
 
-        # 安装 Electron 依赖
+        # 安装 Electron 依赖（使用 npm，electron-builder 要求）
         if not run_command(["npm", "install"], cwd=self.electron_dir):
             return False
 

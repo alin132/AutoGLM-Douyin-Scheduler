@@ -52,6 +52,7 @@ export interface Device {
   connection_type: string;
   state: string;
   is_available_only: boolean;
+  display_name: string | null; // Custom display name (null if not set)
   agent: AgentStatus | null; // Agent runtime status (null if not initialized)
 }
 
@@ -1133,6 +1134,15 @@ export async function abortLayeredAgentChat(sessionId: string): Promise<{
 
 // ==================== History API ====================
 
+export interface MessageRecordResponse {
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: string;
+  thinking?: string | null;
+  action?: Record<string, unknown> | null;
+  step?: number | null;
+}
+
 export interface HistoryRecordResponse {
   id: string;
   task_text: string;
@@ -1145,6 +1155,7 @@ export interface HistoryRecordResponse {
   source: 'chat' | 'layered' | 'scheduled';
   source_detail: string;
   error_message: string | null;
+  messages: MessageRecordResponse[];
 }
 
 export interface HistoryListResponse {
@@ -1880,6 +1891,33 @@ export async function getDouyinDailyStats(
   const res = await axios.get<DouyinDailyStatsResponse>(
     '/api/douyin/comment/stats/replies/daily',
     { params }
+  );
+  return res.data;
+}
+
+export interface DeviceNameResponse {
+  success: boolean;
+  serial: string;
+  display_name: string | null;
+  error?: string;
+}
+
+export async function updateDeviceName(
+  serial: string,
+  displayName: string | null
+): Promise<DeviceNameResponse> {
+  const res = await axios.put<DeviceNameResponse>(
+    `/api/devices/${serial}/name`,
+    { display_name: displayName }
+  );
+  return res.data;
+}
+
+export async function getDeviceName(
+  serial: string
+): Promise<DeviceNameResponse> {
+  const res = await axios.get<DeviceNameResponse>(
+    `/api/devices/${serial}/name`
   );
   return res.data;
 }
