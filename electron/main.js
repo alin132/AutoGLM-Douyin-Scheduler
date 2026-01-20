@@ -105,8 +105,9 @@ autoUpdater.on('update-downloaded', (info) => {
 
 autoUpdater.on('error', (err) => {
   log.error('[Updater] Error:', err);
-  logToDevTools(`[Updater] Error: ${err.message}`, 'error');
+  logToDevTools(`[Updater] Check failed (network issue, will skip): ${err.message}`, 'error');
   // 静默失败，不干扰用户
+  // 网络问题不应该影响应用正常使用
 });
 
 // ==================== 全局变量 ====================

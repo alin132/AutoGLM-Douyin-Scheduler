@@ -179,6 +179,25 @@ async def connect_device(sid: str, data: dict | None) -> None:
             logger.info(f"Stopping existing stream for device {device_id} from sid {s}")
             await _stop_stream_for_sid(s)
 
+        # Auto-connect WiFi/mDNS devices before starting scrcpy
+        if ":" in device_id and not device_id.startswith("emulator"):
+            # This is a network device (IP:port), try to connect first
+            from AutoGLM_GUI.adb import ADBConnection
+            
+            try:
+                adb_conn = ADBConnection()
+                # Check if already connected
+                devices = adb_conn.list_devices()
+                if not any(d.device_id == device_id for d in devices):
+                    logger.info(f"Auto-connecting to WiFi device: {device_id}")
+                    success, msg = adb_conn.connect(device_id)
+                    if not success:
+                        logger.warning(f"Failed to auto-connect {device_id}: {msg}")
+                    else:
+                        logger.info(f"Successfully connected to {device_id}")
+            except Exception as e:
+                logger.warning(f"Auto-connect failed for {device_id}: {e}")
+
         streamer = ScrcpyStreamer(
             device_id=device_id,
             max_size=max_size,

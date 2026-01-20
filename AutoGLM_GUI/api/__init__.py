@@ -141,12 +141,14 @@ def create_app() -> FastAPI:
                 raise RuntimeError(f"Device {device_id} is busy or unavailable (可能正在被聊天界面使用)")
 
             try:
-                agent = manager.get_agent(device_id)
-                if agent is None:
-                    raise RuntimeError(f"Failed to get agent for device {device_id}")
+                agent = manager.get_agent_with_context(
+                    device_id, context="scheduled-task", agent_type="glm"
+                )
 
                 agent.reset()
                 result = agent.run(message)
+                if asyncio.iscoroutine(result):
+                    result = asyncio.run(result)
                 return result if result else "Task completed successfully"
             finally:
                 manager.release_device(device_id)
@@ -188,16 +190,17 @@ def create_app() -> FastAPI:
                     logger.info(f"Task {task_uuid} was aborted before execution")
                     return "Task aborted"
                 
-                agent = manager.get_agent(device_id)
-                if agent is None:
-                    raise RuntimeError(f"Failed to get agent for device {device_id}")
+                agent = manager.get_agent_with_context(
+                    device_id, context="douyin-comment-task", agent_type="glm"
+                )
 
-                # 设置最大步数
                 agent.agent_config.max_steps = max_steps
-                
+
                 agent.reset()
                 result = agent.run(prompt)
-                
+                if asyncio.iscoroutine(result):
+                    result = asyncio.run(result)
+
                 # 执行完成后再次检查是否被中止
                 if not douyin_comment_task_manager.is_task_running(task_uuid):
                     logger.info(f"Task {task_uuid} was aborted during execution")

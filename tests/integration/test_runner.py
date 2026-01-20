@@ -17,6 +17,7 @@ from tests.integration.state_machine import (
 
 
 class TestRunner:
+    __test__ = False
     """
     Runs Agent integration tests using state machine and mock device.
 

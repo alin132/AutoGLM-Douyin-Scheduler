@@ -12,6 +12,7 @@
     "**/build"
   ],
   "typeCheckingMode": "standard",
+  "extraPaths": ["."],
   "reportMissingImports": true,
   "reportMissingTypeStubs": false
 }

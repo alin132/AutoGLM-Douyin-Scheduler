@@ -19,10 +19,20 @@ Example:
     >>> inject_device_protocol(lambda device_id: devices[device_id])
 """
 
+import importlib
+from types import ModuleType
 from typing import Callable
 
-import phone_agent.device_factory as device_factory_module
 from AutoGLM_GUI.device_protocol import DeviceProtocol, Screenshot
+
+_device_factory_module: ModuleType | None = None
+
+
+def _get_device_factory_module() -> ModuleType:
+    global _device_factory_module
+    if _device_factory_module is None:
+        _device_factory_module = importlib.import_module("phone_agent.device_factory")
+    return _device_factory_module
 
 
 class DeviceProtocolAdapter:
@@ -203,13 +213,13 @@ def inject_device_protocol(
     # 如需临时替换，建议使用 DeviceProtocolContext 上下文管理器。
     global _original_factory
 
-    # Save original factory if not already saved
-    if _original_factory is None:
-        _original_factory = device_factory_module._device_factory
+    module = _get_device_factory_module()
 
-    # Create and inject adapter
+    if _original_factory is None:
+        _original_factory = getattr(module, "_device_factory")
+
     adapter = DeviceProtocolAdapter(get_device, default_device_id)
-    device_factory_module._device_factory = adapter
+    setattr(module, "_device_factory", adapter)
 
     return adapter
 
@@ -223,7 +233,8 @@ def restore_device_factory() -> None:
     global _original_factory
 
     if _original_factory is not None:
-        device_factory_module._device_factory = _original_factory
+        module = _get_device_factory_module()
+        setattr(module, "_device_factory", _original_factory)
         _original_factory = None
 
 
@@ -255,10 +266,12 @@ class DeviceProtocolContext:
 
     def __enter__(self) -> DeviceProtocolAdapter:
         """Enter context and inject adapter."""
-        self._original_factory = device_factory_module._device_factory
+        module = _get_device_factory_module()
+        self._original_factory = getattr(module, "_device_factory")
         return inject_device_protocol(self._get_device, self._default_device_id)
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         """Exit context and restore original factory."""
-        device_factory_module._device_factory = self._original_factory
+        module = _get_device_factory_module()
+        setattr(module, "_device_factory", self._original_factory)
         return None

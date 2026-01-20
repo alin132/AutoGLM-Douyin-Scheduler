@@ -250,12 +250,16 @@ async def chat_stream(request: ChatRequest):
             )
 
             try:
-                agent = manager.get_agent(device_id)
+                agent = await asyncio.to_thread(
+                    manager.get_agent_with_context,
+                    device_id,
+                    context="chat",
+                    agent_type="glm-async",
+                )
                 # 重置 Agent 状态，确保新任务不会继承上一个任务的历史
                 agent.reset()
-                streamer = AgentStepStreamer(agent=agent, task=request.message)
 
-                logger.info(f"Using AsyncAgent for device {device_id}")
+                logger.info(f"Using AsyncAgent (glm-async) for device {device_id}")
 
                 # 注册异步取消处理器
                 async def cancel_handler():

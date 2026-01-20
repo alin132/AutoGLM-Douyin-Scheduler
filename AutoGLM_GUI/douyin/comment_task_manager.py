@@ -15,8 +15,6 @@ import threading
 import uuid as uuid_lib
 from datetime import datetime
 from pathlib import Path
-from typing import Callable
-
 from AutoGLM_GUI.base_task_manager import BaseTaskManager, ExecutionStatus, TaskStatus
 from AutoGLM_GUI.douyin.reply_history_db import reply_history_db
 from AutoGLM_GUI.logger import logger
@@ -229,11 +227,15 @@ class DouyinCommentTaskManager(BaseTaskManager):
         if device_id:
             try:
                 from AutoGLM_GUI.phone_agent_manager import PhoneAgentManager
+
                 manager = PhoneAgentManager.get_instance()
                 manager.abort_streaming_chat(device_id)
-                agent = manager.get_agent(device_id)
-                if agent:
-                    agent.abort()
+                agent = manager.get_agent_with_context(
+                    device_id, context="douyin-comment-task", agent_type="glm"
+                )
+                abort_fn = getattr(agent, "abort", None)
+                if callable(abort_fn):
+                    abort_fn()
                 manager.force_release_device(device_id)
                 logger.info(f"Aborted underlying agent for device {device_id}")
             except Exception as e:
@@ -506,9 +508,6 @@ class DouyinCommentTaskManager(BaseTaskManager):
     def _build_single_video_prompt(self, task: dict, video_index: int) -> str:
         """构建单个视频处理的指令."""
         interaction = task["interaction"]
-        comment_config = task["comment"]
-        comment_mode = comment_config.get("mode", "reply")
-        target_regions = comment_config.get("target_regions", [])
         
         # 互动指令
         actions = []
@@ -830,7 +829,7 @@ class DouyinCommentTaskManager(BaseTaskManager):
             
             content = response.choices[0].message.content
             if not content:
-                logger.warning(f"Empty content from decision model")
+                logger.warning("Empty content from decision model")
                 return self._regex_extract(result, mode)
             
             logger.info(f"Decision model content: {content}")

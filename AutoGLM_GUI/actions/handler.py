@@ -115,7 +115,7 @@ class ActionHandler:
     def _handle_type(self, action: dict, width: int, height: int) -> ActionResult:
         text = action.get("text", "")
 
-        original_ime = self.device.detect_and_set_adb_keyboard()
+        self.device.detect_and_set_adb_keyboard()
         time.sleep(0.2)
 
         # 注意：移除了 clear_text 操作

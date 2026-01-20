@@ -260,9 +260,9 @@ class DouyinMessageMonitor:
             return "ERROR: 设备忙碌"
 
         try:
-            agent = manager.get_agent(self._device_id)
-            if agent is None:
-                return "ERROR: 无法获取 Agent"
+            agent = manager.get_agent_with_context(
+                self._device_id, context="douyin-message-monitor", agent_type="glm"
+            )
 
             original_max_steps = agent.agent_config.max_steps
             agent.agent_config.max_steps = max_steps
@@ -270,6 +270,8 @@ class DouyinMessageMonitor:
             try:
                 agent.reset()
                 result = agent.run(instruction)
+                if asyncio.iscoroutine(result):
+                    result = asyncio.run(result)
                 return result if result else "完成"
             finally:
                 agent.agent_config.max_steps = original_max_steps

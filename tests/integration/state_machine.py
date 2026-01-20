@@ -239,6 +239,7 @@ class StateMachine:
 
 
 class TestFailedError(Exception):
+    __test__ = False
     """Raised when a test fails due to max retries or other errors."""
 
     pass
@@ -266,7 +267,7 @@ def load_test_case(
     yaml_path = Path(yaml_path)
     base_dir = Path(base_dir) if base_dir else yaml_path.parent
 
-    with open(yaml_path) as f:
+    with open(yaml_path, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f)
 
     # Validate YAML data against schema

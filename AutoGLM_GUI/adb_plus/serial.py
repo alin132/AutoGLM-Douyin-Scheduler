@@ -10,31 +10,25 @@ def extract_serial_from_mdns(device_id: str) -> Optional[str]:
     """
     Extract hardware serial number from mDNS device ID.
 
-    mDNS service names follow the pattern: adb-{serial}[-{suffix}].{service_type}
+    mDNS service names follow the pattern: adb-{serial}[-{suffix}][.{service_type}]
 
     Examples:
         - "adb-243a09b7-cbCO6P._adb-tls-connect._tcp" → "243a09b7"
         - "adb-243a09b7._adb._tcp" → "243a09b7"
+        - "adb-3151339674001XR-kedwdH" → "3151339674001XR"
         - "adb-ABC123DEF.local" → "ABC123DEF"
 
     Args:
-        device_id: The device ID (can be mDNS service name or regular device ID)
+        device_id: The device ID (can be mDNS service name, device name, or regular device ID)
 
     Returns:
         Extracted serial number, or None if not a valid mDNS format
     """
-    # Check if this is an mDNS device ID
-    mdns_indicators = [
-        "._adb-tls-connect._tcp",
-        "._adb-tls-pairing._tcp",
-        "._adb._tcp",
-        ".local",
-    ]
-
-    if not any(indicator in device_id for indicator in mdns_indicators):
+    # Check if this looks like an mDNS device ID (starts with "adb-")
+    if not device_id.startswith("adb-"):
         return None
 
-    # Pattern: adb-{serial}[-{suffix}].{service_type}
+    # Pattern: adb-{serial}[-{suffix}][.{service_type}]
     # The serial is everything after "adb-" until the next hyphen or dot
     # Match alphanumeric characters (not just hex)
     pattern = r"adb-([0-9a-zA-Z]+)"

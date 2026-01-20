@@ -65,6 +65,13 @@ class ConfigModel(BaseModel):
 
     layered_max_turns: int = LAYERED_MAX_TURNS_DEFAULT
 
+    @field_validator("layered_max_turns")
+    @classmethod
+    def validate_layered_max_turns(cls, v: int) -> int:
+        if v < LAYERED_MAX_TURNS_MIN:
+            raise ValueError(f"layered_max_turns must be >= {LAYERED_MAX_TURNS_MIN}")
+        return v
+
     # 决策模型配置（用于分层代理）
     decision_base_url: str | None = None
     decision_model_name: str | None = None
@@ -339,6 +346,16 @@ class UnifiedConfigManager:
         reply_base_url = os.getenv("AUTOGLM_REPLY_BASE_URL")
         reply_model_name = os.getenv("AUTOGLM_REPLY_MODEL_NAME")
         reply_api_key = os.getenv("AUTOGLM_REPLY_API_KEY")
+        # 分层代理最大轮数
+        layered_max_turns_env = os.getenv("AUTOGLM_LAYERED_MAX_TURNS")
+        layered_max_turns = None
+        if layered_max_turns_env:
+            try:
+                layered_max_turns = int(layered_max_turns_env)
+            except ValueError:
+                logger.warning(
+                    f"Invalid AUTOGLM_LAYERED_MAX_TURNS value: {layered_max_turns_env}"
+                )
 
         self._env_layer = ConfigLayer(
             base_url=base_url if base_url else None,
@@ -620,6 +637,7 @@ class UnifiedConfigManager:
             "agent_type",
             "agent_config_params",
             "default_max_steps",
+            "layered_max_turns",
             "decision_base_url",
             "decision_model_name",
             "decision_api_key",

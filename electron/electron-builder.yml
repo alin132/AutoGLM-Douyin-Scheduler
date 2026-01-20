@@ -43,6 +43,7 @@ win:
     - portable   # 便携版
   icon: icon.ico
   publisherName: AutoGLM-GUI Team
+  sign: null  # 禁用代码签名
 
 nsis:
   oneClick: false
