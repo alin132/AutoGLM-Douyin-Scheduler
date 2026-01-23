@@ -20,6 +20,15 @@ from AutoGLM_GUI.douyin.reply_history_db import reply_history_db
 from AutoGLM_GUI.logger import logger
 
 
+# 搜索模式常量
+SEARCH_MODE_KEYWORD = "keyword"  # 关键词搜索（现有模式）
+SEARCH_MODE_DOUYIN_INDEX = "douyin_index"  # 抖音指数搜索（新模式）
+VALID_SEARCH_MODES = {SEARCH_MODE_KEYWORD, SEARCH_MODE_DOUYIN_INDEX}
+
+# 发布时间筛选白名单
+VALID_VIDEO_PUBLISH_TIMES = {"default", "day", "week", "half_year"}
+VALID_DOUYIN_INDEX_PUBLISH_TIMES = {"default", "3days", "7days", "month"}
+
 # 默认配置
 DEFAULT_VIDEO_FILTER = {
     "min_likes": 1000,
@@ -28,11 +37,16 @@ DEFAULT_VIDEO_FILTER = {
     "sort_by": "latest",  # latest, most_liked, default
 }
 
+# 抖音指数筛选配置
+DEFAULT_DOUYIN_INDEX_FILTER = {
+    "publish_time": "default",  # default(不限), 3days(近3天), 7days(近7天), month(近一个月)
+}
+
 DEFAULT_INTERACTION = {
-    "watch_video": True,
+    "watch_video": False,
     "watch_duration_ratio": 0.8,
-    "like_video": True,
-    "favorite_video": True,
+    "like_video": False,
+    "favorite_video": False,
     "like_probability": 0.9,
 }
 
@@ -41,7 +55,7 @@ DEFAULT_COMMENT = {
     "reply_ratio": 0.01,
     "max_replies_per_video": 5,
     "min_replies_per_video": 1,
-    "target_hot_comments": True,
+    "target_hot_comments": False,
     "target_question_comments": False,  # 优先回复问答形式的评论
     "target_regions": [],  # 目标地区 IP，如 ["山东", "四川"]，空则不限
     "reply_interval_min": 10,
@@ -51,19 +65,25 @@ DEFAULT_COMMENT = {
 DEFAULT_CONTENT = {
     "use_ai": True,
     "style": "koc",
-    "templates": [
-        "确实，说得太对了",
-        "学到了，下次试试",
-        "看饿了，想马上做一个",
-        "这个做法不错，收藏了",
-    ],
+    "templates": [],  # 空列表，由用户自己填写参考示例
 }
 
 DEFAULT_EXECUTION = {
-    "videos_per_run": 5,
-    "video_interval_min": 60,  # 1分钟
-    "video_interval_max": 180,  # 3分钟
+    "videos_per_run": 2,
+    "video_interval_min": 1,
+    "video_interval_max": 10,
 }
+
+# ==================== 定时任务稳定性（不堆积） ====================
+# - 错峰：按任务 uuid 固定偏移 0~N 秒
+# - 抖动：每次调度随机增加 0~M 秒
+# - 连续失败退避：指数跳过若干个 cron 触发点（不补跑）
+# - 自动暂停：连续失败达到阈值后将任务置为 disabled
+SCHEDULE_STAGGER_MAX_SECONDS = 30
+SCHEDULE_JITTER_MAX_SECONDS = 10
+FAILURE_AUTO_PAUSE_THRESHOLD = 3
+FAILURE_BACKOFF_MAX_SKIP = 7
+TASK_TIMEOUT_SECONDS = 30 * 60  # 30 分钟
 
 
 class DouyinCommentTaskManager(BaseTaskManager):
@@ -89,6 +109,16 @@ class DouyinCommentTaskManager(BaseTaskManager):
             history_path=config_dir / "douyin_comment_history.json",
             manager_name="Douyin comment task",
         )
+
+        # 启用定时任务稳定性策略（错峰/抖动 + 连续失败退避/自动暂停）
+        self._schedule_stagger_max_seconds = SCHEDULE_STAGGER_MAX_SECONDS
+        self._schedule_jitter_max_seconds = SCHEDULE_JITTER_MAX_SECONDS
+        self._failure_backoff_enabled = True
+        self._failure_auto_pause_threshold = FAILURE_AUTO_PAUSE_THRESHOLD
+        self._failure_backoff_max_skip = FAILURE_BACKOFF_MAX_SKIP
+
+        # 任务超时保护：单次执行超过此时间强制中断，避免卡死
+        self._task_timeout_seconds = TASK_TIMEOUT_SECONDS
         
         self._initialized = True
         # 记录任务 uuid -> device_id 的映射，用于 abort 时找到对应设备
@@ -98,6 +128,26 @@ class DouyinCommentTaskManager(BaseTaskManager):
         reply_history_db.cleanup_old_records(days=30)
 
     # ==================== 任务创建/更新 ====================
+
+    def _resolve_device_id_by_serial(self, serial: str) -> str | None:
+        """通过 serial 查找当前的 device_id.
+        
+        Args:
+            serial: 设备硬件序列号
+            
+        Returns:
+            当前的 device_id，如果设备不在线则返回 None
+        """
+        try:
+            from AutoGLM_GUI.device_manager import DeviceManager
+            device_manager = DeviceManager.get_instance()
+            device = device_manager.get_device_by_serial(serial)
+            if device:
+                return device.primary_device_id
+            return None
+        except Exception as e:
+            logger.warning(f"Failed to resolve device_id by serial {serial}: {e}")
+            return None
 
     def create_task(
         self,
@@ -112,15 +162,34 @@ class DouyinCommentTaskManager(BaseTaskManager):
         cron_expression: str | None = None,
         end_time: str | None = None,
         enabled: bool = True,
+        search_mode: str = SEARCH_MODE_KEYWORD,
+        douyin_index_filter: dict | None = None,
+        serial: str | None = None,
     ) -> dict:
         """创建任务.
         
         Args:
+            name: 任务名称
+            device_id: 设备 ID（可能会变化）
+            serial: 设备硬件序列号（稳定标识，优先使用）
             end_time: 结束时间，格式 "HH:MM"，到达此时间后停止定时调度
+            search_mode: 搜索模式，keyword（关键词搜索）或 douyin_index（抖音指数）
+            douyin_index_filter: 抖音指数模式的筛选配置
         """
         # 验证 cron 表达式
         if cron_expression:
             self._validate_cron(cron_expression)
+
+        # 如果没有提供 serial，尝试从 DeviceManager 获取
+        if not serial:
+            try:
+                from AutoGLM_GUI.device_manager import DeviceManager
+                device_manager = DeviceManager.get_instance()
+                _serial, _device_id = device_manager.resolve_device_ids(device_id)
+                serial = _serial
+            except Exception as e:
+                logger.warning(f"Failed to get serial for device {device_id}: {e}")
+                serial = None
 
         tasks = self._load_tasks()
         now = datetime.now().isoformat()
@@ -129,14 +198,21 @@ class DouyinCommentTaskManager(BaseTaskManager):
             "uuid": str(uuid_lib.uuid4()),
             "name": name,
             "device_id": device_id,
+            "serial": serial,  # 保存稳定的硬件序列号
             "search_keywords": search_keywords,
+            "search_mode": search_mode,
             "video_filter": {**DEFAULT_VIDEO_FILTER, **(video_filter or {})},
+            "douyin_index_filter": {**DEFAULT_DOUYIN_INDEX_FILTER, **(douyin_index_filter or {})},
             "interaction": {**DEFAULT_INTERACTION, **(interaction or {})},
             "comment": {**DEFAULT_COMMENT, **(comment or {})},
             "content": {**DEFAULT_CONTENT, **(content or {})},
             "execution": {**DEFAULT_EXECUTION, **(execution or {})},
             "cron_expression": cron_expression,
             "end_time": end_time,
+            "consecutive_failures": 0,
+            "last_error": None,
+            "auto_paused_at": None,
+            "auto_pause_reason": None,
             "status": TaskStatus.ENABLED.value if enabled else TaskStatus.DISABLED.value,
             "created_at": now,
             "updated_at": now,
@@ -168,8 +244,8 @@ class DouyinCommentTaskManager(BaseTaskManager):
                 # 更新字段
                 for key, value in kwargs.items():
                     if key not in task:
-                        # 允许新增 end_time 字段
-                        if key == "end_time":
+                        # 允许新增的字段（向后兼容旧任务）
+                        if key in {"end_time", "search_mode", "douyin_index_filter", "serial"}:
                             task[key] = value
                         continue
 
@@ -207,10 +283,36 @@ class DouyinCommentTaskManager(BaseTaskManager):
 
     # ==================== 执行控制 ====================
 
+    def _emit_task_event_sync(self, event_type: str, task_uuid: str, task_name: str, status: str, extra: dict | None = None) -> None:
+        """同步上下文中触发异步任务事件 emit（避免在异步上下文外使用 await）."""
+        try:
+            from AutoGLM_GUI.socketio_server import emit_task_event
+            import asyncio
+
+            # 尝试在当前 event loop 中调度，否则跳过
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(emit_task_event(event_type, task_uuid, task_name, status, extra))
+            except RuntimeError:
+                # 没有运行中的 event loop，尝试新建一个并运行
+                asyncio.run(emit_task_event(event_type, task_uuid, task_name, status, extra))
+        except Exception as e:
+            logger.warning(f"Failed to emit task event: {e}")
+
+    def _on_task_timeout(self, task: dict) -> None:
+        """任务超时后的回调钩子.
+
+        注意：超时时 asyncio.wait_for 会先 cancel _execute_task，
+        _execute_task 的 finally 块会执行并推送事件，因此这里不需要再推送。
+        """
+        # 事件已由 _execute_task 的 finally 块推送，此处仅用于子类扩展其他逻辑
+        pass
+
     def abort_task(self, uuid: str) -> bool:
         """中止正在运行的任务."""
         if uuid not in self._running_tasks:
             return False
+
 
         handle = self._running_task_handles.get(uuid)
         if handle is not None and not handle.done():
@@ -244,6 +346,8 @@ class DouyinCommentTaskManager(BaseTaskManager):
         # 更新任务状态
         self._update_task_status(uuid, TaskStatus.ENABLED)
         logger.info(f"Aborted douyin comment task: uuid={uuid}")
+
+        # 事件推送由 _execute_task 的 finally 块统一处理，避免重复推送
         return True
 
     def run_task_now(self, uuid: str) -> bool:
@@ -259,8 +363,10 @@ class DouyinCommentTaskManager(BaseTaskManager):
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
+            # 没有运行中的事件循环，在新线程中执行
+            # 使用 _execute_task_and_reschedule 以获得超时保护
             thread = threading.Thread(
-                target=lambda: asyncio.run(self._execute_task(task)),
+                target=lambda: asyncio.run(self._execute_task_and_reschedule(task)),
                 daemon=True,
             )
             thread.start()
@@ -277,9 +383,23 @@ class DouyinCommentTaskManager(BaseTaskManager):
         if uuid in self._running_tasks:
             return
 
+        # 优先通过 serial 解析当前的 device_id（设备重启后 device_id 可能变化）
+        device_id = task["device_id"]
+        serial = task.get("serial")
+        if serial:
+            resolved_device_id = self._resolve_device_id_by_serial(serial)
+            if resolved_device_id:
+                device_id = resolved_device_id
+                logger.info(f"Resolved device_id by serial: {serial} -> {device_id}")
+            else:
+                logger.warning(f"Device with serial {serial} not found, using stored device_id: {device_id}")
+
         self._running_tasks.add(uuid)
-        self._task_device_map[uuid] = task["device_id"]
+        self._task_device_map[uuid] = device_id
         self._update_task_status(uuid, TaskStatus.RUNNING)
+
+        # 推送任务开始事件
+        self._emit_task_event_sync("task_started", uuid, task["name"], "running")
 
         execution_config = task["execution"]
         videos_count = execution_config['videos_per_run']
@@ -288,7 +408,7 @@ class DouyinCommentTaskManager(BaseTaskManager):
             "uuid": str(uuid_lib.uuid4()),
             "task_uuid": uuid,
             "task_name": task["name"],
-            "device_id": task["device_id"],
+            "device_id": device_id,
             "started_at": datetime.now().isoformat(),
             "finished_at": None,
             "status": ExecutionStatus.FAILED.value,
@@ -302,13 +422,33 @@ class DouyinCommentTaskManager(BaseTaskManager):
             if self._task_executor is None:
                 raise RuntimeError("Task executor not set")
 
+        # 获取搜索模式（默认为关键词搜索，兼容旧任务）
+            search_mode = task.get("search_mode", SEARCH_MODE_KEYWORD)
+            if search_mode not in VALID_SEARCH_MODES:
+                logger.warning(f"Invalid search_mode '{search_mode}', fallback to keyword")
+                search_mode = SEARCH_MODE_KEYWORD
+            is_douyin_index_mode = search_mode == SEARCH_MODE_DOUYIN_INDEX
+            
+            # 记录执行快照到 details
+            selected_keyword = random.choice(task["search_keywords"]) if task["search_keywords"] else "美食"
+            execution_record["details"].append({
+                "type": "execution_snapshot",
+                "search_mode": search_mode,
+                "selected_keyword": selected_keyword,
+                "video_filter": task.get("video_filter"),
+                "douyin_index_filter": task.get("douyin_index_filter") if is_douyin_index_mode else None,
+            })
+            
             # 阶段1：搜索并进入第一个视频
-            logger.info(f"[{task['name']}] 阶段1: 搜索视频")
-            search_prompt = self._build_search_prompt(task)
+            logger.info(f"[{task['name']}] 阶段1: 搜索视频 (模式: {search_mode})")
+            if is_douyin_index_mode:
+                search_prompt = self._build_douyin_index_search_prompt(task)
+            else:
+                search_prompt = self._build_search_prompt(task)
             await asyncio.to_thread(
                 self._task_executor,
                 uuid,
-                task["device_id"],
+                device_id,
                 search_prompt,
             )
 
@@ -327,7 +467,7 @@ class DouyinCommentTaskManager(BaseTaskManager):
                 video_info_result = await asyncio.to_thread(
                     self._task_executor,
                     uuid,
-                    task["device_id"],
+                    device_id,
                     video_info_prompt,
                 )
                 
@@ -345,7 +485,7 @@ class DouyinCommentTaskManager(BaseTaskManager):
                 find_result = await asyncio.to_thread(
                     self._task_executor,
                     uuid,
-                    task["device_id"],
+                    device_id,
                     comment_prompt,
                 )
                 
@@ -372,7 +512,7 @@ class DouyinCommentTaskManager(BaseTaskManager):
                     await asyncio.to_thread(
                         self._task_executor,
                         uuid,
-                        task["device_id"],
+                        device_id,
                         self._build_close_comment_prompt(),
                     )
                 else:
@@ -393,13 +533,13 @@ class DouyinCommentTaskManager(BaseTaskManager):
                     reply_content = await self._generate_reply(task, original_comment, video_context)
                     
                     if reply_content:
-                        # 阶段2c：发送回复
+                        # 阶段2c：发送回复（send_prompt已包含关闭评论区指令）
                         logger.info(f"[{task['name']}] 视频{i+1}: 发送回复")
                         send_prompt = self._build_send_reply_prompt(reply_content)
                         await asyncio.to_thread(
                             self._task_executor,
                             uuid,
-                            task["device_id"],
+                            device_id,
                             send_prompt,
                         )
                         
@@ -420,28 +560,48 @@ class DouyinCommentTaskManager(BaseTaskManager):
                         await asyncio.to_thread(
                             self._task_executor,
                             uuid,
-                            task["device_id"],
+                            device_id,
                             self._build_close_comment_prompt(),
                         )
                 
-                # 阶段3：上滑到下一个视频（最后一个视频不用上滑）
+                # 阶段3：进入下一个视频（最后一个视频不需要）
                 if i < videos_count - 1:
-                    logger.info(f"[{task['name']}] 上滑到下一个视频")
-                    swipe_prompt = "上滑屏幕，进入下一个视频"
-                    await asyncio.to_thread(
-                        self._task_executor,
-                        uuid,
-                        task["device_id"],
-                        swipe_prompt,
-                    )
+                    if is_douyin_index_mode:
+                        # 抖音指数模式：返回列表再选择下一个视频
+                        logger.info(f"[{task['name']}] 返回视频列表")
+                        await asyncio.to_thread(
+                            self._task_executor,
+                            uuid,
+                            device_id,
+                            self._build_douyin_index_back_to_list_prompt(),
+                        )
+                        logger.info(f"[{task['name']}] 选择下一个视频")
+                        await asyncio.to_thread(
+                            self._task_executor,
+                            uuid,
+                            device_id,
+                            self._build_douyin_index_select_next_video_prompt(),
+                        )
+                    else:
+                        # 关键词搜索模式：上滑到下一个视频
+                        logger.info(f"[{task['name']}] 上滑到下一个视频")
+                        await asyncio.to_thread(
+                            self._task_executor,
+                            uuid,
+                            device_id,
+                            "上滑屏幕，进入下一个视频",
+                        )
 
             # 阶段4：返回主页
             logger.info(f"[{task['name']}] 返回主页")
-            exit_prompt = "点击左上角返回按钮，回到抖音主页，再回到桌面"
+            if is_douyin_index_mode:
+                exit_prompt = self._build_douyin_index_exit_prompt()
+            else:
+                exit_prompt = "点击左上角返回按钮，回到抖音主页，再回到桌面"
             await asyncio.to_thread(
                 self._task_executor,
                 uuid,
-                task["device_id"],
+                device_id,
                 exit_prompt,
             )
 
@@ -460,8 +620,12 @@ class DouyinCommentTaskManager(BaseTaskManager):
 
         finally:
             execution_record["finished_at"] = datetime.now().isoformat()
-            
-            if uuid not in self._running_tasks:
+
+            # 超时优先标记为 FAILED，避免被当作 ABORTED
+            if self._is_task_timed_out(uuid):
+                execution_record["status"] = ExecutionStatus.FAILED.value
+                execution_record["error"] = "timeout"
+            elif uuid not in self._running_tasks:
                 execution_record["status"] = ExecutionStatus.ABORTED.value
             
             self._save_execution_record(execution_record)
@@ -471,9 +635,25 @@ class DouyinCommentTaskManager(BaseTaskManager):
             self._running_task_handles.pop(uuid, None)
 
             current_task = self.get_task(uuid)
+            final_status = "enabled"
             if current_task and current_task["status"] == TaskStatus.RUNNING.value:
                 self._update_task_status(uuid, TaskStatus.ENABLED)
                 self._update_last_run(uuid)
+
+            # 重新获取以反映可能的自动暂停
+            current_task = self.get_task(uuid)
+            if current_task:
+                final_status = current_task.get("status", "enabled")
+
+            # 推送任务结束事件
+            event_type = "task_aborted" if execution_record["status"] == ExecutionStatus.ABORTED.value else "task_finished"
+            self._emit_task_event_sync(
+                event_type,
+                uuid,
+                task["name"],
+                final_status,
+                extra={"result_status": execution_record["status"]},
+            )
 
     def _build_search_prompt(self, task: dict) -> str:
         """构建搜索阶段的指令."""
@@ -560,6 +740,7 @@ class DouyinCommentTaskManager(BaseTaskManager):
         """构建查找评论的指令."""
         comment_config = task["comment"]
         target_regions = comment_config.get("target_regions", [])
+        is_douyin_index_mode = task.get("search_mode", SEARCH_MODE_KEYWORD) == SEARCH_MODE_DOUYIN_INDEX
         
         if comment_mode == "direct":
             return """点击评论图标进入评论区：
@@ -576,11 +757,12 @@ class DouyinCommentTaskManager(BaseTaskManager):
         else:
             if target_regions:
                 regions_str = '、'.join(target_regions)
-                find_instruction = f"找一条IP属地为{regions_str}的评论"
+                find_instruction = f"优先找一条IP属地为{regions_str}的评论，如滚动3次仍找不到则改为任意评论"
             else:
                 find_instruction = "随便选一条评论"
             
-            return f"""点击评论图标进入评论区，{find_instruction}，点击"回复"按钮让输入框弹出，然后停止。
+            entry_instruction = "优先点击右侧评论入口图标进入评论区" if is_douyin_index_mode else "点击评论图标进入评论区"
+            return f"""{entry_instruction}，{find_instruction}，点击"回复"按钮让输入框弹出，然后停止。
 
 报告格式：
 ---
@@ -601,6 +783,51 @@ class DouyinCommentTaskManager(BaseTaskManager):
     def _build_close_comment_prompt(self) -> str:
         """构建关闭评论区的指令."""
         return "关闭评论区，回到视频播放页面。"
+
+    # ==================== 抖音指数模式 Prompt ====================
+
+    def _build_douyin_index_search_prompt(self, task: dict) -> str:
+        """构建抖音指数模式的搜索指令."""
+        keywords = task["search_keywords"]
+        keyword = random.choice(keywords) if keywords else "美食"
+        douyin_index_filter = task.get("douyin_index_filter", DEFAULT_DOUYIN_INDEX_FILTER)
+        
+        # 筛选发布时间（带白名单校验）
+        publish_time = douyin_index_filter.get("publish_time", "default")
+        if publish_time not in VALID_DOUYIN_INDEX_PUBLISH_TIMES:
+            logger.warning(f"Invalid douyin_index publish_time '{publish_time}', fallback to default")
+            publish_time = "default"
+            
+        filter_instruction = ""
+        if publish_time == "3days":
+            filter_instruction = '，筛选发布时间选择"近3天"'
+        elif publish_time == "7days":
+            filter_instruction = '，筛选发布时间选择"近7天"'
+        elif publish_time == "month":
+            filter_instruction = '，筛选发布时间选择"近一个月"'
+        
+        # 随机滚动次数
+        scroll_times = random.randint(1, 5)
+        
+        return f"""打开抖音，搜索"抖音指数"，点击进入抖音指数小程序。
+在抖音指数的搜索框中输入"{keyword}"，点击搜索。
+点击"查看所有搜索结果"，然后点击"视频"标签{filter_instruction}。
+如果视频结果为空，尝试取消发布时间筛选或更换关键词重新搜索。
+向下滚动{scroll_times}次，然后随机点击一个视频进入视频详情，再点击左上角视频播放进入视频播放页面。"""
+
+    def _build_douyin_index_back_to_list_prompt(self) -> str:
+        """构建抖音指数模式返回视频列表的指令."""
+        return """点击左上角返回按钮两次，从视频播放页面返回到视频详情页面，再返回到抖音指数的视频搜索结果列表页面。"""
+
+    def _build_douyin_index_select_next_video_prompt(self) -> str:
+        """构建抖音指数模式选择下一个视频的指令."""
+        scroll_times = random.randint(1, 3)
+        return f"""当前在抖音指数的视频搜索结果列表页面。
+向下滚动{scroll_times}次，随机点击一个之前没看过的视频进入视频详情页面，再点击左上角视频播放进入视频播放页面。"""
+
+    def _build_douyin_index_exit_prompt(self) -> str:
+        """构建抖音指数模式退出的指令."""
+        return """连续点击左上角返回按钮，退出抖音指数小程序，回到抖音主页，再回到桌面。"""
 
     async def _extract_video_info(self, result: str) -> dict | None:
         """使用决策模型从 GUI 模型返回结果中提取视频和评论信息."""
@@ -647,13 +874,16 @@ class DouyinCommentTaskManager(BaseTaskManager):
                 api_key=decision_api_key or "EMPTY",
             )
             
-            response = await asyncio.to_thread(
-                lambda: client.chat.completions.create(
-                    model=decision_model,
-                    messages=[{"role": "user", "content": extract_prompt}],
-                    temperature=0.1,
+            from AutoGLM_GUI.model_limiter import decision_limiter
+
+            async with decision_limiter.acquire_async():
+                response = await asyncio.to_thread(
+                    lambda: client.chat.completions.create(
+                        model=decision_model,
+                        messages=[{"role": "user", "content": extract_prompt}],
+                    )
                 )
-            )
+
             
             if not response.choices:
                 logger.warning("No choices in decision model response")
@@ -960,6 +1190,7 @@ class DouyinCommentTaskManager(BaseTaskManager):
             # 获取回复风格配置
             content_config = task.get("content", DEFAULT_CONTENT)
             style = content_config.get("style", "koc")
+            templates = content_config.get("templates", [])
             
             # 构建人设 prompt
             style_prompts = {
@@ -970,20 +1201,25 @@ class DouyinCommentTaskManager(BaseTaskManager):
             }
             persona = style_prompts.get(style, style_prompts["koc"])
             
+            # 构建参考示例
+            examples_text = ""
+            if templates:
+                examples_text = "\n\n参考示例（学习回复风格，不要直接复制）：\n" + "\n".join(f"- {t}" for t in templates[:10])
+            
             prompt = f"""{persona}
 
-【重要】你是一个普通抖音用户，不是视频作者！你在别人的视频下回复其他用户的评论。
+你是视频作者/商家，在自己的视频下回复用户的评论。
 
-现在有人在视频下评论了："{original_comment}"
-{f"视频相关信息：{video_info}" if video_info else ""}
+现在有人在你的视频下评论了："{original_comment}"
+{f"视频相关信息：{video_info}" if video_info else ""}{examples_text}
 
 请生成一条自然的回复，要求：
 1. 简短有趣，10-30字为宜
 2. 符合抖音评论区的风格
-3. 可以适当用1-2个emoji
+3. 可以适当用符号/emoji
 4. 不要太正式，要像真人聊天
-5. 不要直接推销或打广告
-6. 可以表达认同、分享经验、或友好互动
+5. 如果用户问价格/地址/服务范围等，可以参考示例的回答方式
+6. 语气亲切友好，不要太商业化
 
 只返回回复内容，不要其他解释。"""
 
@@ -996,16 +1232,19 @@ class DouyinCommentTaskManager(BaseTaskManager):
             )
             
             # 调用回复模型
-            response = await asyncio.to_thread(
-                lambda: client.chat.completions.create(
-                    model=reply_model,
-                    messages=[
-                        {"role": "user", "content": prompt}
-                    ],
-                    temperature=0.8,  # 稍高的温度增加多样性
-                    max_tokens=100,
+            from AutoGLM_GUI.model_limiter import reply_limiter
+
+            async with reply_limiter.acquire_async():
+                response = await asyncio.to_thread(
+                    lambda: client.chat.completions.create(
+                        model=reply_model,
+                        messages=[
+                            {"role": "user", "content": prompt}
+                        ],
+                        temperature=0.8,  # 稍高的温度增加多样性
+                        max_tokens=100,
+                    )
                 )
-            )
             
             if not response.choices:
                 logger.warning("No choices in reply model response")

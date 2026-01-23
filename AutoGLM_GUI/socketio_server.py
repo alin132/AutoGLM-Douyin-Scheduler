@@ -33,6 +33,7 @@ _stream_tasks: dict[str, asyncio.Task] = {}
 _device_locks: dict[
     str, asyncio.Lock
 ] = {}  # Lock per device to prevent concurrent connections
+_sid_device_keys: dict[str, str] = {}
 
 
 async def _stop_stream_for_sid(sid: str) -> None:
@@ -43,6 +44,7 @@ async def _stop_stream_for_sid(sid: str) -> None:
     streamer = _socket_streamers.pop(sid, None)
     if streamer:
         streamer.stop()
+    _sid_device_keys.pop(sid, None)
 
 
 def _classify_error(exc: Exception) -> dict:
@@ -92,13 +94,25 @@ def stop_streamers(device_id: str | None = None) -> None:
         streamer = _socket_streamers.get(sid)
         if not streamer:
             continue
-        if device_id and streamer.device_id != device_id:
-            continue
+        if device_id:
+            try:
+                from AutoGLM_GUI.device_manager import DeviceManager
+
+                device_manager = DeviceManager.get_instance()
+                device_key, actual_device_id = device_manager.resolve_device_ids(
+                    device_id
+                )
+            except Exception:
+                device_key, actual_device_id = device_id, device_id
+
+            if _sid_device_keys.get(sid) != device_key and streamer.device_id != actual_device_id:
+                continue
         task = _stream_tasks.pop(sid, None)
         if task:
             task.cancel()
         streamer.stop()
         _socket_streamers.pop(sid, None)
+        _sid_device_keys.pop(sid, None)
 
 
 async def _stream_packets(sid: str, streamer: ScrcpyStreamer) -> None:
@@ -141,6 +155,39 @@ async def disconnect(sid: str) -> None:
     await _stop_stream_for_sid(sid)
 
 
+# ==================== 任务状态推送 ====================
+
+
+async def emit_task_event(
+    event_type: str,
+    task_uuid: str,
+    task_name: str,
+    status: str,
+    extra: dict | None = None,
+) -> None:
+    """广播任务状态变化事件给所有连接的前端客户端.
+
+    Args:
+        event_type: 事件类型，如 "task_started", "task_finished", "task_aborted"
+        task_uuid: 任务 UUID
+        task_name: 任务名称
+        status: 任务状态，如 "running", "enabled", "disabled"
+        extra: 额外信息
+    """
+    payload = {
+        "type": event_type,
+        "task_uuid": task_uuid,
+        "task_name": task_name,
+        "status": status,
+        **(extra or {}),
+    }
+    try:
+        await sio.emit("task-event", payload)
+        logger.debug(f"Emitted task event: {event_type} for {task_uuid}")
+    except Exception as e:
+        logger.warning(f"Failed to emit task event: {e}")
+
+
 @sio.on("connect-device")  # type: ignore[misc]
 async def connect_device(sid: str, data: dict | None) -> None:
     payload = data or {}
@@ -152,6 +199,13 @@ async def connect_device(sid: str, data: dict | None) -> None:
             to=sid,
         )
         return
+    try:
+        from AutoGLM_GUI.device_manager import DeviceManager
+
+        device_manager = DeviceManager.get_instance()
+        device_key, actual_device_id = device_manager.resolve_device_ids(device_id)
+    except Exception:
+        device_key, actual_device_id = device_id, device_id
 
     max_size = int(payload.get("maxSize") or 1280)
     bit_rate = int(payload.get("bitRate") or 4_000_000)
@@ -160,10 +214,10 @@ async def connect_device(sid: str, data: dict | None) -> None:
     await _stop_stream_for_sid(sid)
 
     # Get or create a lock for this device
-    if device_id not in _device_locks:
-        _device_locks[device_id] = asyncio.Lock()
+    if device_key not in _device_locks:
+        _device_locks[device_key] = asyncio.Lock()
 
-    device_lock = _device_locks[device_id]
+    device_lock = _device_locks[device_key]
 
     # Acquire lock to prevent concurrent connections to the same device
     async with device_lock:
@@ -172,15 +226,17 @@ async def connect_device(sid: str, data: dict | None) -> None:
         # Stop any existing streams for the same device (from other sids)
         sids_to_stop = [
             s
-            for s, streamer in _socket_streamers.items()
-            if s != sid and streamer.device_id == device_id
+            for s in _socket_streamers.keys()
+            if s != sid and _sid_device_keys.get(s) == device_key
         ]
         for s in sids_to_stop:
-            logger.info(f"Stopping existing stream for device {device_id} from sid {s}")
+            logger.info(
+                f"Stopping existing stream for device {device_key} from sid {s}"
+            )
             await _stop_stream_for_sid(s)
 
         # Auto-connect WiFi/mDNS devices before starting scrcpy
-        if ":" in device_id and not device_id.startswith("emulator"):
+        if ":" in actual_device_id and not actual_device_id.startswith("emulator"):
             # This is a network device (IP:port), try to connect first
             from AutoGLM_GUI.adb import ADBConnection
             
@@ -188,18 +244,20 @@ async def connect_device(sid: str, data: dict | None) -> None:
                 adb_conn = ADBConnection()
                 # Check if already connected
                 devices = adb_conn.list_devices()
-                if not any(d.device_id == device_id for d in devices):
-                    logger.info(f"Auto-connecting to WiFi device: {device_id}")
-                    success, msg = adb_conn.connect(device_id)
+                if not any(d.device_id == actual_device_id for d in devices):
+                    logger.info(f"Auto-connecting to WiFi device: {actual_device_id}")
+                    success, msg = adb_conn.connect(actual_device_id)
                     if not success:
-                        logger.warning(f"Failed to auto-connect {device_id}: {msg}")
+                        logger.warning(
+                            f"Failed to auto-connect {actual_device_id}: {msg}"
+                        )
                     else:
-                        logger.info(f"Successfully connected to {device_id}")
+                        logger.info(f"Successfully connected to {actual_device_id}")
             except Exception as e:
-                logger.warning(f"Auto-connect failed for {device_id}: {e}")
+                logger.warning(f"Auto-connect failed for {actual_device_id}: {e}")
 
         streamer = ScrcpyStreamer(
-            device_id=device_id,
+            device_id=actual_device_id,
             max_size=max_size,
             bit_rate=bit_rate,
         )
@@ -220,6 +278,7 @@ async def connect_device(sid: str, data: dict | None) -> None:
 
             _socket_streamers[sid] = streamer
             _stream_tasks[sid] = asyncio.create_task(_stream_packets(sid, streamer))
+            _sid_device_keys[sid] = device_key
 
         except Exception as exc:
             streamer.stop()

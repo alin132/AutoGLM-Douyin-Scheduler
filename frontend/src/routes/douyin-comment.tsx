@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { io } from 'socket.io-client';
 import {
   listDouyinCommentTasks,
   createDouyinCommentTask,
@@ -14,6 +15,7 @@ import {
   type DouyinCommentTask,
   type DouyinCommentHistory,
   type Device,
+  type SearchMode,
   getErrorMessage,
 } from '../api';
 import { Button } from '@/components/ui/button';
@@ -114,11 +116,15 @@ interface FormData {
   name: string;
   device_id: string;
   search_keywords: string;
+  search_mode: SearchMode;
   video_filter: {
     min_likes: number;
     max_likes: number;
     publish_time: 'default' | 'day' | 'week' | 'half_year';
     sort_by: 'latest' | 'most_liked' | 'default';
+  };
+  douyin_index_filter: {
+    publish_time: 'default' | '3days' | '7days' | 'month';
   };
   interaction: {
     watch_video: boolean;
@@ -156,17 +162,21 @@ const defaultFormData: FormData = {
   name: '',
   device_id: '',
   search_keywords: '',
+  search_mode: 'keyword' as SearchMode,
   video_filter: {
     min_likes: 1000,
     max_likes: 50000,
     publish_time: 'default' as const,
     sort_by: 'latest' as const,
   },
+  douyin_index_filter: {
+    publish_time: 'default' as const,
+  },
   interaction: {
-    watch_video: true,
+    watch_video: false,
     watch_duration_ratio: 0.8,
-    like_video: true,
-    favorite_video: true,
+    like_video: false,
+    favorite_video: false,
     like_probability: 0.9,
   },
   comment: {
@@ -174,7 +184,7 @@ const defaultFormData: FormData = {
     reply_ratio: 0.01,
     max_replies_per_video: 5,
     min_replies_per_video: 1,
-    target_hot_comments: true,
+    target_hot_comments: false,
     target_question_comments: false,
     target_regions: [],
     reply_interval_min: 10,
@@ -182,9 +192,9 @@ const defaultFormData: FormData = {
   },
   content: { use_ai: true, style: 'koc', templates: '' },
   execution: {
-    videos_per_run: 5,
-    video_interval_min: 60,
-    video_interval_max: 180,
+    videos_per_run: 2,
+    video_interval_min: 1,
+    video_interval_max: 10,
   },
   cron_expression: '',
   end_time: '',
@@ -213,6 +223,54 @@ function DouyinCommentComponent() {
     province.includes(regionQuery.trim())
   );
 
+
+  // 处理任务事件的回调
+  const handleTaskEvent = useCallback(
+    (event: {
+      type: string;
+      task_uuid: string;
+      task_name: string;
+      status: string;
+    }) => {
+      console.log('[DouyinComment] Received task event:', event);
+      // 更新本地任务状态
+      setTasks(prev =>
+        prev.map(t =>
+          t.uuid === event.task_uuid ? { ...t, status: event.status as DouyinCommentTask['status'] } : t
+        )
+      );
+      // 如果任务完成/失败/中止，重新加载完整数据
+      if (['task_finished', 'task_aborted'].includes(event.type)) {
+        loadTasks();
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
+
+  // 建立 WebSocket 连接
+  useEffect(() => {
+    const socket = io({
+      path: '/socket.io',
+      transports: ['websocket'],
+    });
+
+    socket.on('connect', () => {
+      console.log('[DouyinComment] Socket connected');
+    });
+
+    socket.on('task-event', handleTaskEvent);
+
+    socket.on('disconnect', () => {
+      console.log('[DouyinComment] Socket disconnected');
+    });
+
+    return () => {
+      socket.off('task-event', handleTaskEvent);
+      socket.disconnect();
+    };
+  }, [handleTaskEvent]);
+
   const toggleRegion = (province: string) => {
     setFormData(prev => ({
       ...prev,
@@ -232,7 +290,7 @@ function DouyinCommentComponent() {
       setTasks(data.tasks);
     } catch (error) {
       toast({
-        title: '错误',
+        title: t.douyinComment.error,
         description: getErrorMessage(error),
         variant: 'destructive',
       });
@@ -256,15 +314,7 @@ function DouyinCommentComponent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 轮询运行中的任务状态
-  useEffect(() => {
-    const runningTasks = tasks.filter(t => t.status === 'running');
-    if (runningTasks.length === 0) return;
-
-    const interval = setInterval(loadTasks, 3000);
-    return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tasks]);
+  // WebSocket 推送已替代轮询，任务状态变化通过 task-event 事件实时推送
 
   const handleCreate = () => {
     setEditingTask(null);
@@ -274,13 +324,25 @@ function DouyinCommentComponent() {
 
   const handleEdit = (task: DouyinCommentTask) => {
     setEditingTask(task);
+    // 通过 serial 查找当前设备（重启后 device_id 可能变化）
+    let resolvedDeviceId = task.device_id;
+    if (task.serial) {
+      const deviceBySerial = devices.find(d => d.serial === task.serial);
+      if (deviceBySerial) {
+        resolvedDeviceId = deviceBySerial.id;
+      }
+    }
     setFormData({
       name: task.name,
-      device_id: task.device_id,
+      device_id: resolvedDeviceId,
       search_keywords: task.search_keywords.join('\n'),
+      search_mode: task.search_mode || 'keyword',
       video_filter: {
         ...task.video_filter,
         publish_time: task.video_filter.publish_time || 'default',
+      },
+      douyin_index_filter: {
+        publish_time: task.douyin_index_filter?.publish_time || 'default',
       },
       interaction: { ...task.interaction },
       comment: {
@@ -304,13 +366,18 @@ function DouyinCommentComponent() {
   const handleSave = async () => {
     try {
       setSaving(true);
+      // 获取选中设备的 serial（稳定标识）
+      const selectedDevice = devices.find(d => d.id === formData.device_id);
       const payload = {
         name: formData.name,
         device_id: formData.device_id,
+        serial: selectedDevice?.serial, // 传递稳定的硬件序列号
         search_keywords: formData.search_keywords
           .split('\n')
           .filter(k => k.trim()),
+        search_mode: formData.search_mode,
         video_filter: formData.video_filter,
+        douyin_index_filter: formData.douyin_index_filter,
         interaction: formData.interaction,
         comment: {
           ...formData.comment,
@@ -323,21 +390,21 @@ function DouyinCommentComponent() {
             .filter(t => t.trim()),
         },
         execution: formData.execution,
-        cron_expression: formData.cron_expression || undefined,
+        cron_expression: formData.cron_expression,  // 空字符串让后端清除定时
         end_time: formData.end_time || undefined,
       };
       if (editingTask) {
         await updateDouyinCommentTask(editingTask.uuid, payload);
-        toast({ title: '任务已更新' });
+        toast({ title: t.douyinComment.taskUpdated });
       } else {
         await createDouyinCommentTask(payload);
-        toast({ title: '任务已创建' });
+        toast({ title: t.douyinComment.taskCreated });
       }
       setShowDialog(false);
       loadTasks();
     } catch (error) {
       toast({
-        title: '错误',
+        title: t.douyinComment.error,
         description: getErrorMessage(error),
         variant: 'destructive',
       });
@@ -347,14 +414,14 @@ function DouyinCommentComponent() {
   };
 
   const handleDelete = async (uuid: string) => {
-    if (!window.confirm('确定要删除此任务吗？')) return;
+    if (!window.confirm(t.douyinComment.deleteConfirm)) return;
     try {
       await deleteDouyinCommentTask(uuid);
-      toast({ title: '任务已删除' });
+      toast({ title: t.douyinComment.taskDeleted });
       loadTasks();
     } catch (error) {
       toast({
-        title: '错误',
+        title: t.douyinComment.error,
         description: getErrorMessage(error),
         variant: 'destructive',
       });
@@ -365,15 +432,15 @@ function DouyinCommentComponent() {
     try {
       if (task.status === 'enabled') {
         await disableDouyinCommentTask(task.uuid);
-        toast({ title: '任务已禁用' });
+        toast({ title: t.douyinComment.taskDisabled });
       } else {
         await enableDouyinCommentTask(task.uuid);
-        toast({ title: '任务已启用' });
+        toast({ title: t.douyinComment.taskEnabled });
       }
       loadTasks();
     } catch (error) {
       toast({
-        title: '错误',
+        title: t.douyinComment.error,
         description: getErrorMessage(error),
         variant: 'destructive',
       });
@@ -383,11 +450,11 @@ function DouyinCommentComponent() {
   const handleRunNow = async (uuid: string) => {
     try {
       await runDouyinCommentTaskNow(uuid);
-      toast({ title: '任务已启动' });
+      toast({ title: t.douyinComment.taskStarted });
       loadTasks();
     } catch (error) {
       toast({
-        title: '错误',
+        title: t.douyinComment.error,
         description: getErrorMessage(error),
         variant: 'destructive',
       });
@@ -397,11 +464,11 @@ function DouyinCommentComponent() {
   const handleAbort = async (uuid: string) => {
     try {
       await abortDouyinCommentTask(uuid);
-      toast({ title: '任务已停止' });
+      toast({ title: t.douyinComment.taskStopped });
       loadTasks();
     } catch (error) {
       toast({
-        title: '错误',
+        title: t.douyinComment.error,
         description: getErrorMessage(error),
         variant: 'destructive',
       });
@@ -416,7 +483,7 @@ function DouyinCommentComponent() {
       setSelectedTaskHistory(data.history);
     } catch (error) {
       toast({
-        title: '错误',
+        title: t.douyinComment.error,
         description: getErrorMessage(error),
         variant: 'destructive',
       });
@@ -425,27 +492,39 @@ function DouyinCommentComponent() {
     }
   };
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (task: DouyinCommentTask) => {
+    const status = task.status;
+    const isAutoPaused = status === 'disabled' && !!task.auto_paused_at;
+
+    if (isAutoPaused) {
+      return (
+        <Badge variant="destructive">
+          <AlertCircle className="w-3 h-3 mr-1" />
+          {t.douyinComment.autoPausedShort}
+        </Badge>
+      );
+    }
+
     switch (status) {
       case 'enabled':
         return (
           <Badge className="bg-green-500">
             <Power className="w-3 h-3 mr-1" />
-            已启用
+            {t.douyinComment.enabled}
           </Badge>
         );
       case 'disabled':
         return (
           <Badge variant="secondary">
             <PowerOff className="w-3 h-3 mr-1" />
-            已禁用
+            {t.douyinComment.disabled}
           </Badge>
         );
       case 'running':
         return (
           <Badge className="bg-blue-500">
             <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-            运行中
+            {t.douyinComment.running}
           </Badge>
         );
       default:
@@ -468,8 +547,23 @@ function DouyinCommentComponent() {
     }
   };
 
+  const getHistoryStatusLabel = (status: string) => {
+    switch (status) {
+      case 'success':
+        return t.douyinComment.success;
+      case 'partial':
+        return t.douyinComment.partial;
+      case 'failed':
+        return t.douyinComment.failed;
+      case 'aborted':
+        return t.douyinComment.aborted;
+      default:
+        return status;
+    }
+  };
+
   const formatDateTime = (dateStr: string | null) => {
-    if (!dateStr) return '从未';
+    if (!dateStr) return t.douyinComment.never;
     return new Date(dateStr).toLocaleString();
   };
 
@@ -480,12 +574,12 @@ function DouyinCommentComponent() {
         <div className="flex items-center gap-3">
           <MessageCircle className="w-6 h-6" />
           <h1 className="text-xl font-bold">
-            {t.douyinComment?.title || '抖音评论引流'}
+            {t.douyinComment.title}
           </h1>
         </div>
         <Button onClick={handleCreate} size="sm">
           <Plus className="w-4 h-4 mr-1" />
-          创建任务
+          {t.douyinComment.createTask}
         </Button>
       </div>
 
@@ -498,10 +592,10 @@ function DouyinCommentComponent() {
         ) : tasks.length === 0 ? (
           <div className="text-center py-12">
             <MessageCircle className="w-12 h-12 mx-auto text-slate-300 mb-4" />
-            <p className="text-slate-500 mb-4">暂无评论任务</p>
+            <p className="text-slate-500 mb-4">{t.douyinComment.noTasks}</p>
             <Button onClick={handleCreate} size="sm">
               <Plus className="w-4 h-4 mr-1" />
-              创建第一个任务
+              {t.douyinComment.createFirst}
             </Button>
           </div>
         ) : (
@@ -516,7 +610,7 @@ function DouyinCommentComponent() {
                     <CardTitle className="text-base truncate">
                       {task.name}
                     </CardTitle>
-                    {getStatusBadge(task.status)}
+                    {getStatusBadge(task)}
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-2 text-sm">
@@ -537,7 +631,8 @@ function DouyinCommentComponent() {
                       <Star className="w-3 h-3" />
                     )}
                     <span className="text-xs">
-                      回复: {(task.comment.reply_ratio * 100).toFixed(1)}%
+                      {t.douyinComment.replyShort}:{' '}
+                      {(task.comment.reply_ratio * 100).toFixed(1)}%
                     </span>
                   </div>
                   {task.cron_expression && (
@@ -545,8 +640,27 @@ function DouyinCommentComponent() {
                       {task.cron_expression}
                     </div>
                   )}
+
+                  {(() => {
+                    const failures = task.consecutive_failures ?? 0;
+                    if (failures <= 0) return null;
+                    return (
+                      <div className="text-xs text-orange-600">
+                        {t.douyinComment.consecutiveFailuresShort}: {failures}
+                      </div>
+                    );
+                  })()}
+
+                  {task.status === 'disabled' && task.auto_paused_at && task.auto_pause_reason && (
+                    <div
+                      className="text-xs text-red-500 truncate"
+                      title={task.auto_pause_reason}
+                    >
+                      {t.douyinComment.autoPausedShort}: {task.auto_pause_reason}
+                    </div>
+                  )}
                   <div className="text-xs text-slate-400">
-                    下次: {formatDateTime(task.next_run)}
+                    {t.douyinComment.nextRunShort}: {formatDateTime(task.next_run)}
                   </div>
                   {/* 操作按钮 */}
                   <div className="flex flex-wrap gap-1 pt-2">
@@ -619,30 +733,34 @@ function DouyinCommentComponent() {
       <Dialog open={showDialog} onOpenChange={setShowDialog}>
         <DialogContent className="sm:max-w-[700px] max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingTask ? '编辑任务' : '创建任务'}</DialogTitle>
+            <DialogTitle>
+              {editingTask ? t.douyinComment.editTask : t.douyinComment.createTask}
+            </DialogTitle>
           </DialogHeader>
           <Tabs defaultValue="basic" className="w-full">
             <TabsList className="grid w-full grid-cols-3 mb-4">
-              <TabsTrigger value="basic">基本配置</TabsTrigger>
-              <TabsTrigger value="behavior">行为配置</TabsTrigger>
-              <TabsTrigger value="content">内容配置</TabsTrigger>
+              <TabsTrigger value="basic">{t.douyinComment.tabBasic}</TabsTrigger>
+              <TabsTrigger value="behavior">
+                {t.douyinComment.tabBehavior}
+              </TabsTrigger>
+              <TabsTrigger value="content">{t.douyinComment.tabContent}</TabsTrigger>
             </TabsList>
 
             <TabsContent value="basic" className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>任务名称</Label>
+                  <Label>{t.douyinComment.taskName}</Label>
                   <Input
                     className="rounded-none"
                     value={formData.name}
                     onChange={e =>
                       setFormData(prev => ({ ...prev, name: e.target.value }))
                     }
-                    placeholder="例如：香菇美食评论引流"
+                    placeholder={t.douyinComment.taskNamePlaceholder}
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>设备</Label>
+                  <Label>{t.douyinComment.device}</Label>
                   <Select
                     value={formData.device_id}
                     onValueChange={value =>
@@ -653,7 +771,7 @@ function DouyinCommentComponent() {
                       <span>
                         {devices.find(d => d.id === formData.device_id)
                           ? `${devices.find(d => d.id === formData.device_id)?.model} (${formData.device_id})`
-                          : '选择设备'}
+                          : t.douyinComment.selectDevice}
                       </span>
                     </SelectTrigger>
                     <SelectContent>
@@ -667,7 +785,7 @@ function DouyinCommentComponent() {
                 </div>
               </div>
               <div className="space-y-2">
-                <Label>搜索关键词（每行一个）</Label>
+                <Label>{t.douyinComment.searchKeywordsLabel}</Label>
                 <Textarea
                   className="rounded-none resize-none"
                   value={formData.search_keywords}
@@ -677,120 +795,230 @@ function DouyinCommentComponent() {
                       search_keywords: e.target.value,
                     }))
                   }
-                  placeholder="香菇做法&#10;银耳羹做法&#10;菌菇汤"
+                  placeholder={t.douyinComment.searchKeywordsExamplePlaceholder}
                   rows={3}
                 />
               </div>
-              <div className="grid grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label>最小点赞数</Label>
-                  <Input
-                    className="rounded-none"
-                    type="number"
-                    value={formData.video_filter.min_likes}
-                    onChange={e =>
-                      setFormData(prev => ({
-                        ...prev,
-                        video_filter: {
-                          ...prev.video_filter,
-                          min_likes: parseInt(e.target.value) || 0,
-                        },
-                      }))
-                    }
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>最大点赞数</Label>
-                  <Input
-                    className="rounded-none"
-                    type="number"
-                    value={formData.video_filter.max_likes}
-                    onChange={e =>
-                      setFormData(prev => ({
-                        ...prev,
-                        video_filter: {
-                          ...prev.video_filter,
-                          max_likes: parseInt(e.target.value) || 0,
-                        },
-                      }))
-                    }
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>发布时间</Label>
-                  <Select
-                    value={formData.video_filter.publish_time}
-                    onValueChange={value =>
-                      setFormData(prev => ({
-                        ...prev,
-                        video_filter: {
-                          ...prev.video_filter,
-                          publish_time: value as
-                            | 'default'
-                            | 'day'
-                            | 'week'
-                            | 'half_year',
-                        },
-                      }))
-                    }
-                  >
-                    <SelectTrigger className="rounded-none">
-                      <span>
-                        {formData.video_filter.publish_time === 'day'
-                          ? '一天内'
-                          : formData.video_filter.publish_time === 'week'
-                            ? '一周内'
-                            : formData.video_filter.publish_time === 'half_year'
-                              ? '半年内'
-                              : '不限'}
-                      </span>
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="default">不限</SelectItem>
-                      <SelectItem value="day">一天内</SelectItem>
-                      <SelectItem value="week">一周内</SelectItem>
-                      <SelectItem value="half_year">半年内</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+
+              {/* 搜索模式选择 */}
+              <div className="space-y-2">
+                <Label>{t.douyinComment.searchMode}</Label>
+                <Select
+                  value={formData.search_mode}
+                  onValueChange={value =>
+                    setFormData(prev => ({
+                      ...prev,
+                      search_mode: value as SearchMode,
+                    }))
+                  }
+                >
+                  <SelectTrigger className="rounded-none">
+                    <span>
+                      {formData.search_mode === 'douyin_index'
+                        ? t.douyinComment.searchModeDouyinIndex
+                        : t.douyinComment.searchModeKeyword}
+                    </span>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="keyword">
+                      {t.douyinComment.searchModeKeyword}
+                    </SelectItem>
+                    <SelectItem value="douyin_index">
+                      {t.douyinComment.searchModeDouyinIndex}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-slate-500">
+                  {t.douyinComment.searchModeHint}
+                </p>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>视频排序</Label>
-                  <Select
-                    value={formData.video_filter.sort_by}
-                    onValueChange={value =>
-                      setFormData(prev => ({
-                        ...prev,
-                        video_filter: {
-                          ...prev.video_filter,
-                          sort_by: value as 'latest' | 'most_liked' | 'default',
-                        },
-                      }))
-                    }
-                  >
-                    <SelectTrigger className="rounded-none">
-                      <span>
-                        {formData.video_filter.sort_by === 'latest'
-                          ? '最新发布'
-                          : formData.video_filter.sort_by === 'most_liked'
-                            ? '最多点赞'
-                            : '默认排序'}
-                      </span>
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="latest">最新发布</SelectItem>
-                      <SelectItem value="most_liked">最多点赞</SelectItem>
-                      <SelectItem value="default">默认排序</SelectItem>
-                    </SelectContent>
-                  </Select>
+
+              {/* 关键词搜索模式的筛选配置 */}
+              {formData.search_mode === 'keyword' && (
+                <>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="space-y-2">
+                      <Label>{t.douyinComment.minLikes}</Label>
+                      <Input
+                        className="rounded-none"
+                        type="number"
+                        value={formData.video_filter.min_likes}
+                        onChange={e =>
+                          setFormData(prev => ({
+                            ...prev,
+                            video_filter: {
+                              ...prev.video_filter,
+                              min_likes: parseInt(e.target.value) || 0,
+                            },
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>{t.douyinComment.maxLikes}</Label>
+                      <Input
+                        className="rounded-none"
+                        type="number"
+                        value={formData.video_filter.max_likes}
+                        onChange={e =>
+                          setFormData(prev => ({
+                            ...prev,
+                            video_filter: {
+                              ...prev.video_filter,
+                              max_likes: parseInt(e.target.value) || 0,
+                            },
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>{t.douyinComment.publishTime}</Label>
+                      <Select
+                        value={formData.video_filter.publish_time}
+                        onValueChange={value =>
+                          setFormData(prev => ({
+                            ...prev,
+                            video_filter: {
+                              ...prev.video_filter,
+                              publish_time: value as
+                                | 'default'
+                                | 'day'
+                                | 'week'
+                                | 'half_year',
+                            },
+                          }))
+                        }
+                      >
+                        <SelectTrigger className="rounded-none">
+                          <span>
+                            {formData.video_filter.publish_time === 'day'
+                              ? t.douyinComment.publishTimeDay
+                              : formData.video_filter.publish_time === 'week'
+                                ? t.douyinComment.publishTimeWeek
+                                : formData.video_filter.publish_time === 'half_year'
+                                  ? t.douyinComment.publishTimeHalfYear
+                                  : t.douyinComment.publishTimeDefault}
+                          </span>
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="default">
+                            {t.douyinComment.publishTimeDefault}
+                          </SelectItem>
+                          <SelectItem value="day">
+                            {t.douyinComment.publishTimeDay}
+                          </SelectItem>
+                          <SelectItem value="week">
+                            {t.douyinComment.publishTimeWeek}
+                          </SelectItem>
+                          <SelectItem value="half_year">
+                            {t.douyinComment.publishTimeHalfYear}
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>{t.douyinComment.videoSort}</Label>
+                      <Select
+                        value={formData.video_filter.sort_by}
+                        onValueChange={value =>
+                          setFormData(prev => ({
+                            ...prev,
+                            video_filter: {
+                              ...prev.video_filter,
+                              sort_by: value as 'latest' | 'most_liked' | 'default',
+                            },
+                          }))
+                        }
+                      >
+                        <SelectTrigger className="rounded-none">
+                          <span>
+                            {formData.video_filter.sort_by === 'latest'
+                              ? t.douyinComment.videoSortLatest
+                              : formData.video_filter.sort_by === 'most_liked'
+                                ? t.douyinComment.videoSortMostLiked
+                                : t.douyinComment.videoSortDefault}
+                          </span>
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="latest">
+                            {t.douyinComment.videoSortLatest}
+                          </SelectItem>
+                          <SelectItem value="most_liked">
+                            {t.douyinComment.videoSortMostLiked}
+                          </SelectItem>
+                          <SelectItem value="default">
+                            {t.douyinComment.videoSortDefault}
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* 抖音指数模式的筛选配置 */}
+              {formData.search_mode === 'douyin_index' && (
+                <div className="space-y-3 p-4 border rounded-lg bg-blue-50 dark:bg-blue-900/20">
+                  <Label className="text-sm font-medium">
+                    {t.douyinComment.douyinIndexFilterConfig}
+                  </Label>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>{t.douyinComment.douyinIndexPublishTime}</Label>
+                      <Select
+                        value={formData.douyin_index_filter.publish_time}
+                        onValueChange={value =>
+                          setFormData(prev => ({
+                            ...prev,
+                            douyin_index_filter: {
+                              ...prev.douyin_index_filter,
+                              publish_time: value as 'default' | '3days' | '7days' | 'month',
+                            },
+                          }))
+                        }
+                      >
+                        <SelectTrigger className="rounded-none">
+                          <span>
+                            {formData.douyin_index_filter.publish_time === '3days'
+                              ? t.douyinComment.douyinIndexPublishTime3Days
+                              : formData.douyin_index_filter.publish_time === '7days'
+                                ? t.douyinComment.douyinIndexPublishTime7Days
+                                : formData.douyin_index_filter.publish_time === 'month'
+                                  ? t.douyinComment.douyinIndexPublishTimeMonth
+                                  : t.douyinComment.douyinIndexPublishTimeDefault}
+                          </span>
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="default">
+                            {t.douyinComment.douyinIndexPublishTimeDefault}
+                          </SelectItem>
+                          <SelectItem value="3days">
+                            {t.douyinComment.douyinIndexPublishTime3Days}
+                          </SelectItem>
+                          <SelectItem value="7days">
+                            {t.douyinComment.douyinIndexPublishTime7Days}
+                          </SelectItem>
+                          <SelectItem value="month">
+                            {t.douyinComment.douyinIndexPublishTimeMonth}
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    {t.douyinComment.douyinIndexFilterHint}
+                  </p>
                 </div>
-              </div>
+              )}
 
               {/* 定时执行配置 */}
               <div className="space-y-3 p-4 border rounded-lg bg-slate-50 dark:bg-slate-900">
                 <div className="flex items-center justify-between">
-                  <Label className="text-sm font-medium">定时执行</Label>
+                  <Label className="text-sm font-medium">
+                    {t.douyinComment.scheduleConfig}
+                  </Label>
                   <Switch
                     checked={!!formData.cron_expression}
                     onCheckedChange={checked =>
@@ -805,7 +1033,9 @@ function DouyinCommentComponent() {
                 {formData.cron_expression && (
                   <div className="space-y-3 pt-2">
                     <div className="flex items-center gap-3">
-                      <Label className="text-sm whitespace-nowrap">每隔</Label>
+                      <Label className="text-sm whitespace-nowrap">
+                        {t.douyinComment.scheduleEvery}
+                      </Label>
                       <Select
                         value={(() => {
                           // 解析当前 cron 表达式
@@ -846,26 +1076,76 @@ function DouyinCommentComponent() {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="10m">10 分钟</SelectItem>
-                          <SelectItem value="15m">15 分钟</SelectItem>
-                          <SelectItem value="20m">20 分钟</SelectItem>
-                          <SelectItem value="30m">30 分钟</SelectItem>
-                          <SelectItem value="45m">45 分钟</SelectItem>
-                          <SelectItem value="1h">1 小时</SelectItem>
-                          <SelectItem value="2h">2 小时</SelectItem>
-                          <SelectItem value="3h">3 小时</SelectItem>
-                          <SelectItem value="4h">4 小时</SelectItem>
-                          <SelectItem value="6h">6 小时</SelectItem>
+                          <SelectItem value="10m">
+                            {t.douyinComment.intervalMinutes.replace(
+                              '{value}',
+                              '10'
+                            )}
+                          </SelectItem>
+                          <SelectItem value="15m">
+                            {t.douyinComment.intervalMinutes.replace(
+                              '{value}',
+                              '15'
+                            )}
+                          </SelectItem>
+                          <SelectItem value="20m">
+                            {t.douyinComment.intervalMinutes.replace(
+                              '{value}',
+                              '20'
+                            )}
+                          </SelectItem>
+                          <SelectItem value="30m">
+                            {t.douyinComment.intervalMinutes.replace(
+                              '{value}',
+                              '30'
+                            )}
+                          </SelectItem>
+                          <SelectItem value="45m">
+                            {t.douyinComment.intervalMinutes.replace(
+                              '{value}',
+                              '45'
+                            )}
+                          </SelectItem>
+                          <SelectItem value="1h">
+                            {t.douyinComment.intervalHours.replace(
+                              '{value}',
+                              '1'
+                            )}
+                          </SelectItem>
+                          <SelectItem value="2h">
+                            {t.douyinComment.intervalHours.replace(
+                              '{value}',
+                              '2'
+                            )}
+                          </SelectItem>
+                          <SelectItem value="3h">
+                            {t.douyinComment.intervalHours.replace(
+                              '{value}',
+                              '3'
+                            )}
+                          </SelectItem>
+                          <SelectItem value="4h">
+                            {t.douyinComment.intervalHours.replace(
+                              '{value}',
+                              '4'
+                            )}
+                          </SelectItem>
+                          <SelectItem value="6h">
+                            {t.douyinComment.intervalHours.replace(
+                              '{value}',
+                              '6'
+                            )}
+                          </SelectItem>
                         </SelectContent>
                       </Select>
                       <Label className="text-sm whitespace-nowrap">
-                        执行一次
+                        {t.douyinComment.scheduleOnce}
                       </Label>
                     </div>
 
                     <div className="flex items-center gap-3">
                       <Label className="text-sm whitespace-nowrap">
-                        结束时间
+                        {t.douyinComment.scheduleEndTime}
                       </Label>
                       <Input
                         type="time"
@@ -877,7 +1157,7 @@ function DouyinCommentComponent() {
                             end_time: e.target.value,
                           }))
                         }
-                        placeholder="不限制"
+                        placeholder={t.douyinComment.scheduleNoLimitPlaceholder}
                       />
                       {formData.end_time && (
                         <Button
@@ -887,11 +1167,11 @@ function DouyinCommentComponent() {
                             setFormData(prev => ({ ...prev, end_time: '' }))
                           }
                         >
-                          清除
+                          {t.douyinComment.clear}
                         </Button>
                       )}
                       <span className="text-xs text-slate-500">
-                        到达此时间后停止调度
+                        {t.douyinComment.scheduleEndTimeHint}
                       </span>
                     </div>
                   </div>
@@ -901,10 +1181,12 @@ function DouyinCommentComponent() {
 
             <TabsContent value="behavior" className="space-y-4">
               <div className="space-y-3">
-                <Label className="text-sm font-medium">观看与互动</Label>
+                <Label className="text-sm font-medium">
+                  {t.douyinComment.interactionSectionTitle}
+                </Label>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="flex items-center justify-between">
-                    <Label className="text-sm">观看视频</Label>
+                    <Label className="text-sm">{t.douyinComment.watchVideo}</Label>
                     <Switch
                       checked={formData.interaction.watch_video}
                       onCheckedChange={checked =>
@@ -919,7 +1201,7 @@ function DouyinCommentComponent() {
                     />
                   </div>
                   <div className="flex items-center justify-between">
-                    <Label className="text-sm">点赞视频</Label>
+                    <Label className="text-sm">{t.douyinComment.likeVideo}</Label>
                     <Switch
                       checked={formData.interaction.like_video}
                       onCheckedChange={checked =>
@@ -934,7 +1216,9 @@ function DouyinCommentComponent() {
                     />
                   </div>
                   <div className="flex items-center justify-between">
-                    <Label className="text-sm">收藏视频</Label>
+                    <Label className="text-sm">
+                      {t.douyinComment.favoriteVideo}
+                    </Label>
                     <Switch
                       checked={formData.interaction.favorite_video}
                       onCheckedChange={checked =>
@@ -949,7 +1233,9 @@ function DouyinCommentComponent() {
                     />
                   </div>
                   <div className="flex items-center justify-between">
-                    <Label className="text-sm">优先热门评论</Label>
+                    <Label className="text-sm">
+                      {t.douyinComment.targetHotComments}
+                    </Label>
                     <Switch
                       checked={formData.comment.target_hot_comments}
                       onCheckedChange={checked =>
@@ -964,7 +1250,9 @@ function DouyinCommentComponent() {
                     />
                   </div>
                   <div className="flex items-center justify-between">
-                    <Label className="text-sm">优先问答评论</Label>
+                    <Label className="text-sm">
+                      {t.douyinComment.targetQuestionComments}
+                    </Label>
                     <Switch
                       checked={formData.comment.target_question_comments}
                       onCheckedChange={checked =>
@@ -982,7 +1270,7 @@ function DouyinCommentComponent() {
               </div>
               {formData.comment.mode === 'reply' && (
                 <div className="space-y-2">
-                  <Label>目标地区 IP（点击选择，留空则不限）</Label>
+                  <Label>{t.douyinComment.targetRegionsLabel}</Label>
                   <Popover>
                     <PopoverTrigger asChild>
                       <Button
@@ -992,13 +1280,16 @@ function DouyinCommentComponent() {
                       >
                         <span className="truncate text-left">
                           {formData.comment.target_regions.length === 0
-                            ? '不限'
+                            ? t.douyinComment.noLimit
                             : formData.comment.target_regions.length <= 3
                               ? formData.comment.target_regions.join('、')
-                              : `已选择 ${formData.comment.target_regions.length} 个地区`}
+                              : t.douyinComment.selectedRegionsCount.replace(
+                                  '{count}',
+                                  String(formData.comment.target_regions.length)
+                                )}
                         </span>
                         <div className="ml-2 flex items-center gap-2 text-xs text-muted-foreground">
-                          <span>多选</span>
+                          <span>{t.douyinComment.multiSelect}</span>
                           <ChevronDown className="h-4 w-4" />
                         </div>
                       </Button>
@@ -1010,7 +1301,7 @@ function DouyinCommentComponent() {
                       <div className="p-3 pb-2 border-b">
                         <Input
                           className="rounded-none"
-                          placeholder="搜索地区…"
+                          placeholder={t.douyinComment.searchRegionPlaceholder}
                           value={regionQuery}
                           onChange={e => setRegionQuery(e.target.value)}
                         />
@@ -1077,7 +1368,7 @@ function DouyinCommentComponent() {
                             formData.comment.target_regions.length === 0
                           }
                         >
-                          清空选择
+                          {t.douyinComment.clearSelection}
                         </Button>
                       </div>
                     </PopoverContent>
@@ -1086,7 +1377,7 @@ function DouyinCommentComponent() {
               )}
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>观看时长比例</Label>
+                  <Label>{t.douyinComment.watchDurationRatioLabel}</Label>
                   <Input
                     className="rounded-none"
                     type="number"
@@ -1107,7 +1398,7 @@ function DouyinCommentComponent() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>点赞概率</Label>
+                  <Label>{t.douyinComment.likeProbability}</Label>
                   <Input
                     className="rounded-none"
                     type="number"
@@ -1128,9 +1419,11 @@ function DouyinCommentComponent() {
                 </div>
               </div>
               <div className="space-y-3">
-                <Label className="text-sm font-medium">评论配置</Label>
+                <Label className="text-sm font-medium">
+                  {t.douyinComment.commentConfig}
+                </Label>
                 <div className="space-y-2">
-                  <Label>评论模式</Label>
+                  <Label>{t.douyinComment.commentMode}</Label>
                   <Select
                     value={formData.comment.mode}
                     onValueChange={value =>
@@ -1146,16 +1439,16 @@ function DouyinCommentComponent() {
                     <SelectTrigger className="rounded-none">
                       <span>
                         {formData.comment.mode === 'direct'
-                          ? '直接评论（结合视频内容）'
-                          : '回复评论（回复他人评论）'}
+                          ? t.douyinComment.commentModeDirect
+                          : t.douyinComment.commentModeReply}
                       </span>
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="direct">
-                        直接评论（结合视频内容）
+                        {t.douyinComment.commentModeDirect}
                       </SelectItem>
                       <SelectItem value="reply">
-                        回复评论（回复他人评论）
+                        {t.douyinComment.commentModeReply}
                       </SelectItem>
                     </SelectContent>
                   </Select>
@@ -1164,7 +1457,7 @@ function DouyinCommentComponent() {
                   <>
                     <div className="grid grid-cols-3 gap-4">
                       <div className="space-y-2">
-                        <Label>回复比例</Label>
+                        <Label>{t.douyinComment.replyRatio}</Label>
                         <Input
                           className="rounded-none"
                           type="number"
@@ -1184,7 +1477,7 @@ function DouyinCommentComponent() {
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label>最少回复数</Label>
+                        <Label>{t.douyinComment.minReplies}</Label>
                         <Input
                           className="rounded-none"
                           type="number"
@@ -1203,7 +1496,7 @@ function DouyinCommentComponent() {
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label>最多回复数</Label>
+                        <Label>{t.douyinComment.maxReplies}</Label>
                         <Input
                           className="rounded-none"
                           type="number"
@@ -1224,7 +1517,7 @@ function DouyinCommentComponent() {
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <Label>回复间隔（秒）最小</Label>
+                        <Label>{t.douyinComment.replyIntervalMinSeconds}</Label>
                         <Input
                           className="rounded-none"
                           type="number"
@@ -1243,7 +1536,7 @@ function DouyinCommentComponent() {
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label>回复间隔（秒）最大</Label>
+                        <Label>{t.douyinComment.replyIntervalMaxSeconds}</Label>
                         <Input
                           className="rounded-none"
                           type="number"
@@ -1266,10 +1559,12 @@ function DouyinCommentComponent() {
                 )}
               </div>
               <div className="space-y-3">
-                <Label className="text-sm font-medium">执行配置</Label>
+                <Label className="text-sm font-medium">
+                  {t.douyinComment.executionConfig}
+                </Label>
                 <div className="grid grid-cols-3 gap-4">
                   <div className="space-y-2">
-                    <Label>每次处理视频数</Label>
+                    <Label>{t.douyinComment.videosPerRun}</Label>
                     <Input
                       className="rounded-none"
                       type="number"
@@ -1287,7 +1582,7 @@ function DouyinCommentComponent() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label>视频间隔（秒）最小</Label>
+                    <Label>{t.douyinComment.videoIntervalMinSeconds}</Label>
                     <Input
                       className="rounded-none"
                       type="number"
@@ -1305,7 +1600,7 @@ function DouyinCommentComponent() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label>视频间隔（秒）最大</Label>
+                    <Label>{t.douyinComment.videoIntervalMaxSeconds}</Label>
                     <Input
                       className="rounded-none"
                       type="number"
@@ -1328,7 +1623,7 @@ function DouyinCommentComponent() {
 
             <TabsContent value="content" className="space-y-4">
               <div className="flex items-center justify-between">
-                <Label>使用 AI 生成回复</Label>
+                <Label>{t.douyinComment.useAiReply}</Label>
                 <Switch
                   checked={formData.content.use_ai}
                   onCheckedChange={checked =>
@@ -1340,7 +1635,7 @@ function DouyinCommentComponent() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>回复风格</Label>
+                <Label>{t.douyinComment.replyStyle}</Label>
                 <Select
                   value={formData.content.style}
                   onValueChange={value =>
@@ -1354,14 +1649,20 @@ function DouyinCommentComponent() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="koc">KOC 风格（自然口语化）</SelectItem>
-                    <SelectItem value="professional">专业风格</SelectItem>
-                    <SelectItem value="casual">随意风格</SelectItem>
+                    <SelectItem value="koc">
+                      {t.douyinComment.styleKocNatural}
+                    </SelectItem>
+                    <SelectItem value="professional">
+                      {t.douyinComment.styleProfessional}
+                    </SelectItem>
+                    <SelectItem value="casual">
+                      {t.douyinComment.styleCasual}
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>回复模板（每行一个，仅供参考）</Label>
+                <Label>{t.douyinComment.replyTemplatesLabel}</Label>
                 <Textarea
                   className="rounded-none resize-none"
                   value={formData.content.templates}
@@ -1371,7 +1672,7 @@ function DouyinCommentComponent() {
                       content: { ...prev.content, templates: e.target.value },
                     }))
                   }
-                  placeholder="确实，说得太对了&#10;学到了，下次试试&#10;看饿了，想马上做一个"
+                  placeholder={t.douyinComment.replyTemplatesPlaceholder}
                   rows={5}
                 />
               </div>
@@ -1379,14 +1680,19 @@ function DouyinCommentComponent() {
           </Tabs>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowDialog(false)}>
-              取消
+              {t.common.cancel}
             </Button>
             <Button
               onClick={handleSave}
-              disabled={saving || !formData.name || !formData.device_id}
+              disabled={
+                saving ||
+                !formData.name.trim() ||
+                !formData.device_id ||
+                !formData.search_keywords.trim()
+              }
             >
               {saving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              {editingTask ? '保存' : '创建'}
+              {editingTask ? t.common.save : t.common.create}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1396,7 +1702,7 @@ function DouyinCommentComponent() {
       <Dialog open={showHistoryDialog} onOpenChange={setShowHistoryDialog}>
         <DialogContent className="sm:max-w-[600px] max-h-[70vh]">
           <DialogHeader>
-            <DialogTitle>执行历史</DialogTitle>
+            <DialogTitle>{t.douyinComment.history}</DialogTitle>
           </DialogHeader>
           <div className="overflow-y-auto max-h-[50vh]">
             {historyLoading ? (
@@ -1405,7 +1711,7 @@ function DouyinCommentComponent() {
               </div>
             ) : selectedTaskHistory.length === 0 ? (
               <div className="text-center py-8 text-slate-500">
-                暂无执行记录
+                {t.douyinComment.noHistory}
               </div>
             ) : (
               <div className="space-y-2">
@@ -1432,7 +1738,7 @@ function DouyinCommentComponent() {
                               : 'destructive'
                         }
                       >
-                        {record.status}
+                        {getHistoryStatusLabel(record.status)}
                       </Badge>
                     </div>
                     {record.result && (

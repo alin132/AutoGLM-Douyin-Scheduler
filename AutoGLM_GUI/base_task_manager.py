@@ -9,10 +9,12 @@
 
 import asyncio
 import copy
+import hashlib
 import json
+import random
 import threading
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Callable
@@ -69,6 +71,21 @@ class BaseTaskManager(ABC):
         self._task_executor: Callable | None = None
         self._running_tasks: set[str] = set()
         self._running_task_handles: dict[str, asyncio.Task] = {}
+
+        # 调度稳定性/失败退避（默认关闭，由子类按需启用）
+        self._schedule_stagger_max_seconds: int = 0
+        self._schedule_jitter_max_seconds: int = 0
+        self._failure_backoff_enabled: bool = False
+        self._failure_auto_pause_threshold: int = 0
+        self._failure_backoff_max_skip: int = 0
+
+        # 任务超时保护（默认关闭，由子类按需启用）
+        # 单位：秒；0 表示不超时
+        self._task_timeout_seconds: int = 0
+
+        # 超时标记（用于区分超时取消与主动中止）
+        self._timed_out_tasks: set[str] = set()
+        self._timed_out_lock = threading.Lock()
         
         self._ensure_dirs()
 
@@ -76,6 +93,21 @@ class BaseTaskManager(ABC):
         """确保配置目录存在."""
         self._tasks_path.parent.mkdir(parents=True, exist_ok=True)
         self._history_path.parent.mkdir(parents=True, exist_ok=True)
+
+    def _mark_task_timed_out(self, uuid: str) -> None:
+        """标记任务超时."""
+        with self._timed_out_lock:
+            self._timed_out_tasks.add(uuid)
+
+    def _clear_task_timed_out(self, uuid: str) -> None:
+        """清除任务超时标记."""
+        with self._timed_out_lock:
+            self._timed_out_tasks.discard(uuid)
+
+    def _is_task_timed_out(self, uuid: str) -> bool:
+        """判断任务是否超时."""
+        with self._timed_out_lock:
+            return uuid in self._timed_out_tasks
 
     def set_task_executor(self, executor: Callable) -> None:
         """设置任务执行器."""
@@ -139,6 +171,14 @@ class BaseTaskManager(ABC):
 
                 task["status"] = TaskStatus.ENABLED.value
                 task["updated_at"] = datetime.now().isoformat()
+
+                # 如果任务因为连续失败被自动暂停，重新启用时需要清零失败计数
+                if self._failure_backoff_enabled:
+                    task["consecutive_failures"] = 0
+                    task["last_error"] = None
+                    task["auto_paused_at"] = None
+                    task["auto_pause_reason"] = None
+
                 self._save_tasks(tasks)
 
                 if task.get("cron_expression"):
@@ -185,6 +225,31 @@ class BaseTaskManager(ABC):
 
     # ==================== 调度器内部方法 ====================
 
+    def _compute_stable_stagger_seconds(self, task_uuid: str) -> int:
+        max_seconds = self._schedule_stagger_max_seconds
+        if max_seconds <= 0:
+            return 0
+
+        digest = hashlib.sha256(task_uuid.encode("utf-8")).hexdigest()
+        return int(digest[:8], 16) % (max_seconds + 1)
+
+    def _compute_random_jitter_seconds(self) -> int:
+        max_seconds = self._schedule_jitter_max_seconds
+        if max_seconds <= 0:
+            return 0
+        return random.randint(0, max_seconds)
+
+    def _compute_failure_backoff_skip_count(self, consecutive_failures: int) -> int:
+        if not self._failure_backoff_enabled:
+            return 0
+        if consecutive_failures <= 1:
+            return 0
+        if self._failure_backoff_max_skip <= 0:
+            return 0
+
+        skip = (1 << (consecutive_failures - 1)) - 1
+        return min(skip, self._failure_backoff_max_skip)
+
     def _register_job(self, task: dict) -> None:
         """注册调度任务（一次性触发，任务完成后再注册下一次）."""
         if self._scheduler is None:
@@ -198,31 +263,78 @@ class BaseTaskManager(ABC):
         self._unregister_job(uuid)
 
         try:
-            # 计算下一次执行时间
+            # 使用本地时区的 aware datetime，避免与 CronTrigger 返回的 aware datetime 比较时报错
+            now = datetime.now().astimezone()
+
+            # 计算下一次执行时间（cron 本身仍然是“卡点”，这里只在最终 run_date 上做错峰/抖动）
             trigger = CronTrigger.from_crontab(cron)
-            next_time = trigger.get_next_fire_time(None, datetime.now())
-            
+            next_time = trigger.get_next_fire_time(None, now)
+
             if next_time:
-                # 检查是否超过结束时间
-                end_time_str = task.get("end_time")
-                if end_time_str and self._is_past_end_time(next_time, end_time_str):
-                    logger.info(f"Skipping {self._manager_name} job {uuid}: past end time {end_time_str}")
-                    # 更新 next_run 为 None
+                # 连续失败：指数退避（跳过若干个 cron 触发点，不补跑）
+                consecutive_failures = int(task.get("consecutive_failures") or 0)
+
+                if (
+                    self._failure_backoff_enabled
+                    and self._failure_auto_pause_threshold > 0
+                    and consecutive_failures >= self._failure_auto_pause_threshold
+                ):
+                    # 兜底：避免“已达到自动暂停阈值但仍然被调度”的异常状态
                     self._update_next_run(uuid, None)
                     return
-                
+
+                skip_count = self._compute_failure_backoff_skip_count(consecutive_failures)
+                if skip_count > 0:
+                    skipped = 0
+                    base_time = next_time
+                    while skipped < skip_count:
+                        nxt = trigger.get_next_fire_time(base_time, base_time)
+                        if not nxt:
+                            break
+                        base_time = nxt
+                        skipped += 1
+
+                    if skipped > 0:
+                        logger.info(
+                            f"Applying failure backoff for {self._manager_name} job {uuid}: "
+                            f"consecutive_failures={consecutive_failures}, skip={skipped}, next={base_time}"
+                        )
+                        next_time = base_time
+
+                # 错峰/抖动：减少同一时刻大量任务一起启动
+                stagger_seconds = self._compute_stable_stagger_seconds(uuid)
+                jitter_seconds = self._compute_random_jitter_seconds()
+                run_date = next_time + timedelta(seconds=stagger_seconds + jitter_seconds)
+
+                if run_date <= now:
+                    run_date = now + timedelta(seconds=1)
+
+                # 检查是否超过结束时间（以实际 run_date 为准）
+                end_time_str = task.get("end_time")
+                if end_time_str and self._is_past_end_time(run_date, end_time_str):
+                    logger.info(
+                        f"Skipping {self._manager_name} job {uuid}: past end time {end_time_str}"
+                    )
+                    self._update_next_run(uuid, None)
+                    return
+
                 # 使用 date trigger 安排一次性执行
                 from apscheduler.triggers.date import DateTrigger
+
                 self._scheduler.add_job(
                     self._job_wrapper,
-                    trigger=DateTrigger(run_date=next_time),
+                    trigger=DateTrigger(run_date=run_date),
                     id=uuid,
                     args=[task],
                     replace_existing=True,
                 )
-                # 更新任务的 next_run 字段
-                self._update_next_run(uuid, next_time.isoformat())
-                logger.debug(f"Registered {self._manager_name} job: {uuid}, next run: {next_time}")
+
+                # 更新任务的 next_run 字段（写入实际 run_date）
+                self._update_next_run(uuid, run_date.isoformat())
+                logger.debug(
+                    f"Registered {self._manager_name} job: {uuid}, next run: {run_date} "
+                    f"(base={next_time}, stagger={stagger_seconds}s, jitter={jitter_seconds}s)"
+                )
         except Exception as e:
             logger.error(f"Failed to register {self._manager_name} job {uuid}: {e}")
     
@@ -283,16 +395,66 @@ class BaseTaskManager(ABC):
             self._schedule_task(uuid, loop, current_task)
 
     async def _execute_task_and_reschedule(self, task: dict) -> None:
-        """执行任务并在完成后重新调度下一次."""
+        """执行任务并在完成后重新调度下一次.
+
+        如果配置了 _task_timeout_seconds，超时后会以 FAILED 状态记录，
+        并触发失败退避/自动暂停机制。
+        """
+        uuid = task["uuid"]
+        timed_out = False
+
         try:
-            await self._execute_task(task)
+            if self._task_timeout_seconds > 0:
+                task_handle = asyncio.create_task(self._execute_task(task))
+                done, pending = await asyncio.wait(
+                    {task_handle},
+                    timeout=self._task_timeout_seconds,
+                )
+                if pending:
+                    timed_out = True
+                    logger.error(
+                        f"{self._manager_name} task {uuid} timed out after {self._task_timeout_seconds}s"
+                    )
+                    self._mark_task_timed_out(uuid)
+                    task_handle.cancel()
+                    try:
+                        await task_handle
+                    except asyncio.CancelledError:
+                        # 如果是外层任务被取消，继续抛出；否则吞掉取消异常
+                        current = asyncio.current_task()
+                        if current is not None and current.cancelled():
+                            raise
+                    finally:
+                        self._clear_task_timed_out(uuid)
+                    # 调用超时回调钩子（子类可覆盖以推送事件等）
+                    self._on_task_timeout(task)
+                else:
+                    # 任务正常完成
+                    await task_handle
+            else:
+                await self._execute_task(task)
+        except asyncio.CancelledError:
+            # 外层被取消时，确保内层任务也被取消
+            if task_handle is not None and not task_handle.done():
+                task_handle.cancel()
+                try:
+                    await task_handle
+                except asyncio.CancelledError:
+                    pass
+            raise
         finally:
             # 任务完成后，重新注册下一次调度
-            uuid = task["uuid"]
             current_task = self.get_task(uuid)
-            if current_task and current_task["status"] == TaskStatus.ENABLED.value and current_task.get("cron_expression"):
+            if (
+                current_task
+                and current_task["status"] == TaskStatus.ENABLED.value
+                and current_task.get("cron_expression")
+            ):
                 self._register_job(current_task)
-                logger.info(f"Rescheduled {self._manager_name} job {uuid} after completion")
+                logger.info(
+                    f"Rescheduled {self._manager_name} job {uuid} after completion"
+                    + (" (timed out)" if timed_out else "")
+                )
 
     def _schedule_task(self, task_uuid: str, loop: asyncio.AbstractEventLoop, task: dict) -> None:
         """在事件循环中调度任务."""
@@ -393,9 +555,86 @@ class BaseTaskManager(ABC):
             except Exception:
                 return []
 
+    def _post_process_execution_record(self, record: dict) -> None:
+        """在保存 history 的同时，根据执行结果更新任务状态（连续失败退避/自动暂停等）."""
+        if not self._failure_backoff_enabled:
+            return
+
+        task_uuid = record.get("task_uuid")
+        if not task_uuid:
+            return
+
+        status = record.get("status")
+        if status is None:
+            return
+
+        is_success = status == ExecutionStatus.SUCCESS.value
+        is_failure = status in (ExecutionStatus.FAILED.value, ExecutionStatus.PARTIAL.value)
+
+        if not (is_success or is_failure):
+            return
+
+        tasks = self._load_tasks()
+        auto_paused = False
+        now_iso = datetime.now().isoformat()
+
+        for task in tasks:
+            if task.get("uuid") != task_uuid:
+                continue
+
+            failures = int(task.get("consecutive_failures") or 0)
+
+            if is_success:
+                task["consecutive_failures"] = 0
+                task["last_error"] = None
+                task["auto_paused_at"] = None
+                task["auto_pause_reason"] = None
+                task["updated_at"] = now_iso
+                break
+
+            # failure
+            failures += 1
+            task["consecutive_failures"] = failures
+            task["updated_at"] = now_iso
+
+            err = record.get("error")
+            task["last_error"] = err
+
+            if (
+                self._failure_auto_pause_threshold > 0
+                and failures >= self._failure_auto_pause_threshold
+                and task.get("status") != TaskStatus.DISABLED.value
+            ):
+                task["status"] = TaskStatus.DISABLED.value
+                task["next_run"] = None
+                task["auto_paused_at"] = now_iso
+                task["auto_pause_reason"] = err or f"连续失败达到 {failures} 次"
+
+                # 记录最后一次运行时间（即使被自动暂停，也希望 UI 能看到刚刚尝试过）
+                started_at = record.get("started_at")
+                if started_at:
+                    task["last_run"] = started_at
+
+                auto_paused = True
+            break
+        else:
+            return
+
+        self._save_tasks(tasks)
+
+        if auto_paused:
+            self._unregister_job(task_uuid)
+            logger.warning(
+                f"Auto-paused {self._manager_name} task {task_uuid}: "
+                f"consecutive_failures>={self._failure_auto_pause_threshold}"
+            )
+
     def _save_execution_record(self, record: dict) -> None:
         """保存执行记录."""
         with self._io_lock:
+            # 先更新任务状态（可能会触发自动暂停/退避）
+            self._post_process_execution_record(record)
+
             history = self._load_history()
             history.append(record)
 
@@ -414,4 +653,14 @@ class BaseTaskManager(ABC):
     @abstractmethod
     async def _execute_task(self, task: dict) -> None:
         """执行任务（子类实现）."""
+        pass
+
+    def _on_task_timeout(self, task: dict) -> None:
+        """任务超时后的回调钩子（子类可覆盖以推送事件等）.
+
+        此方法在超时处理完成后调用，此时：
+        - execution_record 已保存为 FAILED
+        - _running_tasks 已清理
+        - 任务状态已改为 ENABLED
+        """
         pass

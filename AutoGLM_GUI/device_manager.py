@@ -223,6 +223,10 @@ class DeviceManager:
         # Reverse mapping for backward compatibility
         self._device_id_to_serial: dict[str, str] = {}  # Key: device_id -> serial
 
+        # Serial cache: device_id -> serial (cached from successful getprop calls)
+        # Used when device is offline to maintain correct serial mapping
+        self._serial_cache: dict[str, str] = {}
+
         # Polling thread control
         self._poll_thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
@@ -242,7 +246,7 @@ class DeviceManager:
         # mDNS discovery support
         self._mdns_supported: Optional[bool] = None  # Lazy check
         self._mdns_devices: dict[str, ManagedDevice] = {}  # Key: serial
-        self._enable_mdns_discovery: bool = True  # Feature toggle
+        self._enable_mdns_discovery: bool = False  # 禁用 mDNS 自动发现，避免显示未连接的设备
 
         self._remote_devices: dict[str, "DeviceProtocol"] = {}
         self._remote_device_configs: dict[str, dict] = {}
@@ -334,6 +338,32 @@ class DeviceManager:
 
             return None
 
+    def get_device_by_serial(self, serial: str) -> Optional[ManagedDevice]:
+        """Get device by hardware serial number.
+        
+        Args:
+            serial: Hardware serial number (ro.serialno)
+            
+        Returns:
+            ManagedDevice if found, None otherwise
+        """
+        with self._devices_lock:
+            return self._devices.get(serial)
+
+    def resolve_device_ids(self, device_id: str) -> tuple[str, str]:
+        """Resolve a device identifier into (stable_serial, primary_device_id).
+
+        Args:
+            device_id: Device ID or serial
+
+        Returns:
+            Tuple of (stable_serial, primary_device_id). If not found, returns (device_id, device_id).
+        """
+        managed = self.get_device_by_device_id(device_id)
+        if not managed:
+            return (device_id, device_id)
+        return (managed.serial, managed.primary_device_id)
+
     def force_refresh(self) -> None:
         """Trigger immediate device list refresh (blocking).
 
@@ -348,6 +378,39 @@ class DeviceManager:
                 f"Device poll failed during force refresh: {e}. "
                 f"This is expected in remote-only deployments without local ADB."
             )
+
+    # ==================== 连接历史管理 ====================
+
+    def _record_connection_history(
+        self,
+        ip: str,
+        port: int,
+        model: Optional[str] = None,
+        serial: Optional[str] = None,
+    ) -> None:
+        """记录 WiFi 连接历史."""
+        try:
+            self._metadata_manager.add_connection_history(
+                ip=ip,
+                port=port,
+                serial=serial,
+                model=model,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to record connection history: {e}")
+
+    def get_connection_history(self) -> list[dict]:
+        """获取连接历史列表."""
+        history = self._metadata_manager.get_connection_history()
+        return [h.to_dict() for h in history]
+
+    def remove_connection_history(self, ip: str) -> bool:
+        """删除连接历史记录."""
+        return self._metadata_manager.remove_connection_history(ip)
+
+    def update_connection_history_name(self, ip: str, name: Optional[str]) -> bool:
+        """更新连接历史的自定义名称."""
+        return self._metadata_manager.update_connection_history_name(ip, name)
 
     # Internal methods
 
@@ -399,8 +462,24 @@ class DeviceManager:
         device_with_serials: list[tuple[DeviceInfo, str]] = []
 
         for device_info in adb_devices:
-            # get_device_serial always returns a value (uses device_id as fallback)
-            serial = get_device_serial(device_info.device_id, self._adb_path)
+            device_id = device_info.device_id
+
+            # First check cache (for offline devices that were previously online)
+            if device_info.status != "device" and device_id in self._serial_cache:
+                serial = self._serial_cache[device_id]
+                logger.debug(
+                    f"Using cached serial for offline device {device_id}: {serial}"
+                )
+            else:
+                # get_device_serial needs device_status to avoid getprop on offline devices
+                serial = get_device_serial(
+                    device_id, self._adb_path, device_info.status
+                )
+
+                # Cache successful serial lookups (not device_id fallbacks)
+                if serial != device_id:
+                    self._serial_cache[device_id] = serial
+
             device_with_serials.append((device_info, serial))
 
         # Step 2: Group devices by serial
@@ -633,14 +712,25 @@ class DeviceManager:
         conn = ADBConnection(adb_path=self._adb_path)
 
         # Get device info
-        device_info = conn.get_device_info(device_id)
+        serial, actual_device_id = self.resolve_device_ids(device_id)
+        device_info = conn.get_device_info(actual_device_id)
         if not device_info:
             return (False, "No connected device found", None)
 
-        # Already WiFi connection
+        # Already WiFi connection (check this specific device_id)
         if device_info.connection_type == ConnectionType.REMOTE:
             address = device_info.device_id
             return (True, "Already connected over WiFi", address)
+
+        # Check if device already has another WiFi connection (by serial)
+        managed = self.get_device_by_device_id(serial)
+        if managed:
+            for conn_info in managed.connections:
+                if conn_info.connection_type == DeviceConnectionType.WIFI:
+                    # 设备已有 WiFi 连接，直接返回成功
+                    address = conn_info.device_id
+                    logger.info(f"Device {serial} already has WiFi connection: {address}")
+                    return (True, "Already connected over WiFi", address)
 
         # 1) Enable tcpip
         ok, msg = conn.enable_tcpip(port=port, device_id=device_info.device_id)
@@ -662,28 +752,88 @@ class DeviceManager:
             return (False, msg or "Failed to connect over WiFi", None)
 
         logger.info(f"Successfully switched device {device_id} to WiFi: {address}")
+        
+        # 记录连接历史
+        self._record_connection_history(
+            ip,
+            port,
+            serial=serial,
+            model=device_info.model,
+        )
+        
         return (True, "Switched to WiFi successfully", address)
 
     def disconnect_wifi(self, device_id: str) -> tuple[bool, str]:
         """Disconnect WiFi connection.
 
         Args:
-            device_id: Device ID (IP:port)
+            device_id: Device ID (serial/IP:port/mDNS)
 
         Returns:
             Tuple of (success, message)
         """
         from AutoGLM_GUI.adb import ADBConnection
 
+        def _extract_mdns_name(did: str) -> str | None:
+            for suffix in ("._adb-tls-connect._tcp", "._adb-tls-pairing._tcp"):
+                if suffix in did:
+                    return did.split(suffix)[0]
+            return None
+
         conn = ADBConnection(adb_path=self._adb_path)
-        ok, msg = conn.disconnect(device_id)
 
-        if ok:
-            logger.info(f"Successfully disconnected WiFi device: {device_id}")
+        serial, _primary = self.resolve_device_ids(device_id)
+        managed = self.get_device_by_device_id(serial)
+
+        device_ids_to_disconnect: set[str] = set()
+        if managed:
+            for c in managed.connections:
+                if c.connection_type == DeviceConnectionType.WIFI:
+                    device_ids_to_disconnect.add(c.device_id)
         else:
-            logger.warning(f"Failed to disconnect WiFi device {device_id}: {msg}")
+            device_ids_to_disconnect.add(device_id)
 
-        return (ok, msg)
+        # Build mDNS name -> ip:port map
+        mdns_address_map: dict[str, str] = {}
+        try:
+            from AutoGLM_GUI.adb_plus import discover_mdns_devices
+
+            mdns_devices = discover_mdns_devices(self._adb_path)
+            mdns_address_map = {d.name: f"{d.ip}:{d.port}" for d in mdns_devices}
+        except Exception as e:
+            logger.debug(f"mDNS discovery failed during disconnect: {e}")
+
+        target_addresses: set[str] = set()
+        for did in device_ids_to_disconnect:
+            if ":" in did and not did.startswith("adb-"):
+                target_addresses.add(did)
+                continue
+
+            mdns_name = _extract_mdns_name(did)
+            if mdns_name and mdns_name in mdns_address_map:
+                target_addresses.add(mdns_address_map[mdns_name])
+
+        if not target_addresses:
+            target_addresses.add(device_id)
+
+        disconnected: list[str] = []
+        failed: list[str] = []
+        for address in target_addresses:
+            ok, msg = conn.disconnect(address)
+            if ok:
+                disconnected.append(address)
+                logger.info(f"Successfully disconnected WiFi device: {address}")
+            else:
+                failed.append(address)
+                logger.warning(f"Failed to disconnect WiFi device {address}: {msg}")
+
+        if disconnected:
+            message = f"Disconnected {len(disconnected)} connection(s)"
+            if failed:
+                message += f", {len(failed)} failed"
+            return (True, message)
+
+        return (False, "Failed to disconnect any connection")
 
     def connect_wifi_manual(
         self, ip: str, port: int
@@ -719,6 +869,26 @@ class DeviceManager:
             return (False, msg or f"Failed to connect to {address}", None)
 
         logger.info(f"Successfully connected to WiFi device manually: {address}")
+        
+        # 记录连接历史（尽量补充 serial/model）
+        serial = None
+        model = None
+        try:
+            device_info = conn.get_device_info(address)
+            if device_info:
+                model = device_info.model
+                from AutoGLM_GUI.adb_plus import get_device_serial
+                serial = get_device_serial(address, conn.adb_path, device_info.status)
+        except Exception as e:
+            logger.debug(f"Failed to enrich connection history for {address}: {e}")
+
+        self._record_connection_history(
+            ip,
+            port,
+            serial=serial,
+            model=model,
+        )
+        
         return (True, f"Successfully connected to {address}", address)
 
     def pair_wifi(
@@ -789,6 +959,26 @@ class DeviceManager:
         logger.info(
             f"Successfully paired and connected to WiFi device: {connection_address}"
         )
+        
+        # 记录连接历史（尽量补充 serial/model）
+        serial = None
+        model = None
+        try:
+            device_info = conn.get_device_info(connection_address)
+            if device_info:
+                model = device_info.model
+                from AutoGLM_GUI.adb_plus import get_device_serial
+                serial = get_device_serial(connection_address, conn.adb_path, device_info.status)
+        except Exception as e:
+            logger.debug(f"Failed to enrich connection history for {connection_address}: {e}")
+
+        self._record_connection_history(
+            ip,
+            connection_port,
+            serial=serial,
+            model=model,
+        )
+        
         return (
             True,
             f"Successfully paired and connected to {connection_address}",
@@ -941,6 +1131,8 @@ class DeviceManager:
         Returns:
             Serial (synthetic or ADB) or None if not found
         """
+        if device_id in self._devices:
+            return device_id
         return self._device_id_to_serial.get(device_id)
 
     def get_device_protocol(self, device_id: str) -> "DeviceProtocol":

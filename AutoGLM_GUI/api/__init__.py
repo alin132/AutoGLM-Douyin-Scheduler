@@ -19,6 +19,7 @@ from AutoGLM_GUI.version import APP_VERSION
 
 from . import (
     agents,
+    config,
     control,
     devices,
     douyin_auto_reply,
@@ -121,6 +122,7 @@ def create_app() -> FastAPI:
         ) -> str:
             """Execute a scheduled task using PhoneAgentManager."""
             from AutoGLM_GUI.logger import logger
+            from AutoGLM_GUI.model_limiter import execution_limiter
 
             logger.info(
                 f"Executing scheduled task {task_uuid}: "
@@ -145,11 +147,12 @@ def create_app() -> FastAPI:
                     device_id, context="scheduled-task", agent_type="glm"
                 )
 
-                agent.reset()
-                result = agent.run(message)
-                if asyncio.iscoroutine(result):
-                    result = asyncio.run(result)
-                return result if result else "Task completed successfully"
+                with execution_limiter.acquire():
+                    agent.reset()
+                    result = agent.run(message)
+                    if asyncio.iscoroutine(result):
+                        result = asyncio.run(result)
+                    return result if result else "Task completed successfully"
             finally:
                 manager.release_device(device_id)
 
@@ -165,6 +168,7 @@ def create_app() -> FastAPI:
             """Execute a douyin comment task using PhoneAgentManager."""
             from AutoGLM_GUI.config_manager import config_manager
             from AutoGLM_GUI.logger import logger
+            from AutoGLM_GUI.model_limiter import execution_limiter
 
             # 从全局配置获取最大步数
             effective_config = config_manager.get_effective_config()
@@ -196,10 +200,11 @@ def create_app() -> FastAPI:
 
                 agent.agent_config.max_steps = max_steps
 
-                agent.reset()
-                result = agent.run(prompt)
-                if asyncio.iscoroutine(result):
-                    result = asyncio.run(result)
+                with execution_limiter.acquire():
+                    agent.reset()
+                    result = agent.run(prompt)
+                    if asyncio.iscoroutine(result):
+                        result = asyncio.run(result)
 
                 # 执行完成后再次检查是否被中止
                 if not douyin_comment_task_manager.is_task_running(task_uuid):
@@ -240,6 +245,7 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(agents.router)
+    app.include_router(config.router)
     app.include_router(health.router)
     app.include_router(history.router)
     app.include_router(layered_agent.router)
