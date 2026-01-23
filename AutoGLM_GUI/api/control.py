@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter
 
+from AutoGLM_GUI.device_manager import DeviceManager
 from AutoGLM_GUI.devices.adb_device import ADBDevice
 from AutoGLM_GUI.schemas import (
     SwipeRequest,
@@ -19,14 +20,20 @@ from AutoGLM_GUI.schemas import (
 router = APIRouter()
 
 
+def _resolve_actual_device_id(device_id: str) -> str:
+    device_manager = DeviceManager.get_instance()
+    _serial, actual_device_id = device_manager.resolve_device_ids(device_id)
+    return actual_device_id
+
+
 @router.post("/api/control/tap", response_model=TapResponse)
 def control_tap(request: TapRequest) -> TapResponse:
     """Execute tap at specified device coordinates."""
     try:
         if not request.device_id:
             return TapResponse(success=False, error="device_id is required")
-
-        device = ADBDevice(request.device_id)
+        actual_device_id = _resolve_actual_device_id(request.device_id)
+        device = ADBDevice(actual_device_id)
         device.tap(
             x=request.x,
             y=request.y,
@@ -44,8 +51,8 @@ def control_swipe(request: SwipeRequest) -> SwipeResponse:
     try:
         if not request.device_id:
             return SwipeResponse(success=False, error="device_id is required")
-
-        device = ADBDevice(request.device_id)
+        actual_device_id = _resolve_actual_device_id(request.device_id)
+        device = ADBDevice(actual_device_id)
         device.swipe(
             start_x=request.start_x,
             start_y=request.start_y,
@@ -66,10 +73,11 @@ def control_touch_down(request: TouchDownRequest) -> TouchDownResponse:
     try:
         from AutoGLM_GUI.adb_plus import touch_down
 
+        actual_device_id = _resolve_actual_device_id(request.device_id)
         touch_down(
             x=request.x,
             y=request.y,
-            device_id=request.device_id,
+            device_id=actual_device_id,
             delay=request.delay,
         )
 
@@ -84,10 +92,11 @@ def control_touch_move(request: TouchMoveRequest) -> TouchMoveResponse:
     try:
         from AutoGLM_GUI.adb_plus import touch_move
 
+        actual_device_id = _resolve_actual_device_id(request.device_id)
         touch_move(
             x=request.x,
             y=request.y,
-            device_id=request.device_id,
+            device_id=actual_device_id,
             delay=request.delay,
         )
 
@@ -102,10 +111,11 @@ def control_touch_up(request: TouchUpRequest) -> TouchUpResponse:
     try:
         from AutoGLM_GUI.adb_plus import touch_up
 
+        actual_device_id = _resolve_actual_device_id(request.device_id)
         touch_up(
             x=request.x,
             y=request.y,
-            device_id=request.device_id,
+            device_id=actual_device_id,
             delay=request.delay,
         )
 

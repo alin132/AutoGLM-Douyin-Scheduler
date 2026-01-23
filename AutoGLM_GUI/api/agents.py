@@ -25,6 +25,11 @@ from AutoGLM_GUI.state import (
 from AutoGLM_GUI.version import APP_VERSION
 
 router = APIRouter()
+def _resolve_device_ids(device_id: str) -> tuple[str, str]:
+    from AutoGLM_GUI.device_manager import DeviceManager
+
+    device_manager = DeviceManager.get_instance()
+    return device_manager.resolve_device_ids(device_id)
 
 
 def _setup_adb_keyboard(device_id: str) -> None:
@@ -77,8 +82,11 @@ def init_agent(request: InitRequest) -> dict:
     from AutoGLM_GUI.config_manager import config_manager
 
     device_id = request.device_id
+    device_key, _actual_device_id = _resolve_device_ids(device_id)
+    device_id = device_key
     if not device_id:
         raise HTTPException(status_code=400, detail="device_id is required")
+    device_key, actual_device_id = _resolve_device_ids(device_id)
 
     # 热重载配置文件（支持运行时手动修改）
     config_manager.load_file_config()
@@ -103,14 +111,14 @@ def init_agent(request: InitRequest) -> dict:
 
     agent_config = AgentConfig(
         max_steps=effective_config.default_max_steps,
-        device_id=device_id,
+        device_id=actual_device_id,
         # lang, system_prompt, verbose 使用 AgentConfig 默认值
     )
 
     # Initialize agent (includes ADB Keyboard setup)
     try:
         # Setup ADB Keyboard (common for all agents)
-        _setup_adb_keyboard(device_id)
+        _setup_adb_keyboard(actual_device_id)
 
         # Use agent factory to create agent
         from AutoGLM_GUI.phone_agent_manager import PhoneAgentManager
@@ -126,7 +134,7 @@ def init_agent(request: InitRequest) -> dict:
             AgentSpecificConfig, request.agent_config_params or {}
         )
         manager.initialize_agent_with_factory(
-            device_id=device_id,
+            device_id=device_key,
             agent_type=request.agent_type,
             model_config=model_config,
             agent_config=agent_config,
@@ -136,7 +144,7 @@ def init_agent(request: InitRequest) -> dict:
         )
 
         logger.info(
-            f"/api/init is deprecated. Agent of type '{request.agent_type}' initialized for device {device_id}. "
+            f"/api/init is deprecated. Agent of type '{request.agent_type}' initialized for device {device_key}. "
             f"Consider using auto-initialization instead."
         )
     except Exception as e:
@@ -145,8 +153,8 @@ def init_agent(request: InitRequest) -> dict:
 
     return {
         "success": True,
-        "device_id": device_id,
-        "message": f"Agent initialized for device {device_id} (⚠️ /api/init is deprecated)",
+        "device_id": device_key,
+        "message": f"Agent initialized for device {device_key} (⚠️ /api/init is deprecated)",
         "agent_type": request.agent_type,
         "deprecated": True,
         "hint": "Agent 会在首次使用时自动初始化，无需手动调用此端点",
@@ -163,6 +171,8 @@ async def chat(request: ChatRequest) -> ChatResponse:
     from AutoGLM_GUI.phone_agent_manager import PhoneAgentManager
 
     device_id = request.device_id
+    device_key, _actual_device_id = _resolve_device_ids(device_id)
+    device_id = device_key
     manager = PhoneAgentManager.get_instance()
 
     acquired = False
@@ -219,6 +229,8 @@ async def chat_stream(request: ChatRequest):
     from AutoGLM_GUI.phone_agent_manager import PhoneAgentManager
 
     device_id = request.device_id
+    device_key, _actual_device_id = _resolve_device_ids(device_id)
+    device_id = device_key
     manager = PhoneAgentManager.get_instance()
 
     async def event_generator():
@@ -300,8 +312,11 @@ async def chat_stream(request: ChatRequest):
 
                 except asyncio.CancelledError:
                     logger.info(f"AsyncAgent task cancelled for device {device_id}")
-                    yield "event: cancelled\n"
-                    yield f"data: {json.dumps({'message': 'Task cancelled by user'})}\n\n"
+                    aborted_data = _create_sse_event(
+                        "aborted", {"message": "Task cancelled by user"}
+                    )
+                    yield "event: aborted\n"
+                    yield f"data: {json.dumps(aborted_data, ensure_ascii=False)}\n\n"
                     raise
 
                 finally:
@@ -376,6 +391,7 @@ def get_status(device_id: str | None = None) -> StatusResponse:
             initialized=len(manager.list_agents()) > 0,
             step_count=0,
         )
+    device_id, _actual_device_id = _resolve_device_ids(device_id)
 
     if not manager.is_initialized(device_id):
         return StatusResponse(
@@ -399,6 +415,7 @@ def reset_agent(request: ResetRequest) -> dict:
     from AutoGLM_GUI.phone_agent_manager import PhoneAgentManager
 
     device_id = request.device_id
+    device_id, _actual_device_id = _resolve_device_ids(device_id)
     manager = PhoneAgentManager.get_instance()
 
     try:
@@ -418,6 +435,7 @@ async def abort_chat(request: AbortRequest) -> dict:
     from AutoGLM_GUI.phone_agent_manager import PhoneAgentManager
 
     device_id = request.device_id
+    device_id, _actual_device_id = _resolve_device_ids(device_id)
     manager = PhoneAgentManager.get_instance()
 
     # 使用异步方法 (支持 AsyncAgent 和 BaseAgent)

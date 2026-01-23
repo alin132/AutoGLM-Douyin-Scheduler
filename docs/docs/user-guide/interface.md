@@ -5,19 +5,7 @@ title: 界面预览
 
 ## 📸 界面预览
 
-快速跳转： [普通模式](/docs/user-guide/ai-modes#mode-classic) · [双模型协作（增强）](/docs/user-guide/ai-modes#mode-dual) · [分层代理（增强）](/docs/user-guide/ai-modes#mode-layered)
-
-### 双模型协作架构
-
-**决策大模型（如 GLM-4.7）+ 视觉小模型（AutoGLM-Phone）**：大模型负责规划与纠错，小模型负责观察与执行，适合更复杂、更长流程的任务。
-
-- 🧠 **决策层**：任务理解 / 步骤规划 / 异常纠错
-- 👁️ **执行层**：识别界面元素并点击/滑动/输入完成操作
-- 🔄 **运行方式**：规划 → 执行 → 反馈；必要时自动重规划
-
-**模式选择（Thinking Mode）**：TURBO（更省更快，推荐常规流程）/ DEEP（更稳，适合复杂任务）/ FAST（更快，适合轻量任务）。
-
-<img width="879" height="849" alt="双模型协作界面" src="https://github.com/user-attachments/assets/15e5cf51-5a19-403d-9af3-46f77c2068f5" />
+快速跳转： [普通模式](/docs/user-guide/ai-modes#mode-classic) · [分层代理（增强）](/docs/user-guide/ai-modes#mode-layered)
 
 ### 分层代理
 

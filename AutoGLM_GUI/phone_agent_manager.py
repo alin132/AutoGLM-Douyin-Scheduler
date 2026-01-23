@@ -106,6 +106,17 @@ class PhoneAgentManager:
         self._agents: dict[str, AsyncAgent | BaseAgent] = {}
         self._agent_configs: dict[str, tuple[ModelConfig, AgentConfig]] = {}
 
+    def _resolve_actual_device_id(self, device_id: str) -> str:
+        """Resolve device_id/serial to actual primary device id for operations."""
+        try:
+            from AutoGLM_GUI.device_manager import DeviceManager
+
+            device_manager = DeviceManager.get_instance()
+            _serial, actual_device_id = device_manager.resolve_device_ids(device_id)
+            return actual_device_id
+        except Exception:
+            return device_id
+
     @classmethod
     def get_instance(cls) -> PhoneAgentManager:
         """Get singleton instance (thread-safe, double-checked locking)."""
@@ -163,6 +174,8 @@ class PhoneAgentManager:
                     raise AgentInitializationError(
                         "agent_config.device_id is required but was None"
                     )
+                actual_device_id = self._resolve_actual_device_id(actual_device_id)
+                agent_config.device_id = actual_device_id
                 try:
                     device = device_manager.get_device_protocol(actual_device_id)
                 except ValueError:
@@ -226,6 +239,7 @@ class PhoneAgentManager:
         logger.info(
             f"Auto-initializing agent for key {agent_key} (device: {actual_device_id})..."
         )
+        actual_device_id = self._resolve_actual_device_id(actual_device_id)
 
         # 热重载配置
         config_manager.load_file_config()
@@ -289,7 +303,10 @@ class PhoneAgentManager:
             agent_key = device_id if context == "default" else f"{device_id}:{context}"
 
             if agent_key not in self._agents:
-                self._auto_initialize_agent(agent_key, device_id, agent_type=agent_type)
+                actual_device_id = self._resolve_actual_device_id(device_id)
+                self._auto_initialize_agent(
+                    agent_key, actual_device_id, agent_type=agent_type
+                )
 
             return self._agents[agent_key]
 
@@ -410,7 +427,8 @@ class PhoneAgentManager:
                 # Double-check locking pattern for thread safety
                 with self._manager_lock:
                     if not self.is_initialized(device_id):
-                        self._auto_initialize_agent(device_id, device_id)
+                        actual_device_id = self._resolve_actual_device_id(device_id)
+                        self._auto_initialize_agent(device_id, actual_device_id)
             else:
                 raise AgentNotInitializedError(
                     f"Agent not initialized for device {device_id}. "

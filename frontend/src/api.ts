@@ -89,12 +89,9 @@ export interface APIAgentConfig {
 }
 
 export interface InitRequest {
-  model_config?: APIModelConfig;
-  agent_config?: APIAgentConfig;
-  // Agent 类型配置
+  device_id: string;
   agent_type?: string;
   agent_config_params?: Record<string, unknown>;
-  // Hot-reload support
   force?: boolean;
 }
 
@@ -269,6 +266,7 @@ export interface MdnsDevice {
   has_pairing: boolean;
   service_type: string;
   pairing_port?: number;
+  serial?: string; // 从 name 中提取的硬件序列号
 }
 
 export interface MdnsDiscoverResponse {
@@ -400,6 +398,20 @@ export async function removeRemoteDevice(
   return res.data;
 }
 
+export interface ForceReleaseResponse {
+  success: boolean;
+  message: string;
+}
+
+export async function forceReleaseDevice(
+  deviceId: string
+): Promise<ForceReleaseResponse> {
+  const res = await axios.post<ForceReleaseResponse>(
+    `/api/devices/${encodeURIComponent(deviceId)}/force_release`
+  );
+  return res.data;
+}
+
 export async function initAgent(
   config?: InitRequest
 ): Promise<{ success: boolean; message: string; device_id?: string }> {
@@ -480,10 +492,17 @@ export function sendMessageStream(
               } else if (eventType === 'done') {
                 console.log('[SSE] Received done event:', data);
                 onDone(data as DoneEvent);
-              } else if (eventType === 'aborted') {
-                console.log('[SSE] Received aborted event:', data);
+              } else if (eventType === 'aborted' || eventType === 'cancelled') {
+                console.log(`[SSE] Received ${eventType} event:`, data);
                 if (onAborted) {
-                  onAborted(data as AbortedEvent);
+                  const abortedEvent: AbortedEvent = {
+                    type: 'aborted',
+                    role: 'assistant',
+                    message:
+                      (data as { message?: string }).message ??
+                      'Task aborted by server',
+                  };
+                  onAborted(abortedEvent);
                 }
               } else if (eventType === 'error') {
                 console.log('[SSE] Received error event:', data);
@@ -647,8 +666,7 @@ export interface ConfigResponse {
   model_name: string;
   api_key: string;
   source: string;
-  // 双模型配置
-  dual_model_enabled: boolean;
+  // 决策模型配置
   decision_base_url: string;
   decision_model_name: string;
   decision_api_key: string;
@@ -667,8 +685,7 @@ export interface ConfigSaveRequest {
   base_url: string;
   model_name: string;
   api_key?: string;
-  // 双模型配置
-  dual_model_enabled?: boolean;
+  // 决策模型配置
   decision_base_url?: string;
   decision_model_name?: string;
   decision_api_key?: string;
@@ -840,284 +857,6 @@ export async function updateWorkflow(
 
 export async function deleteWorkflow(uuid: string): Promise<void> {
   await axios.delete(`/api/workflows/${uuid}`);
-}
-
-// ==================== Dual Model API ====================
-
-export interface DualModelInitRequest {
-  device_id: string;
-  decision_base_url?: string;
-  decision_api_key: string;
-  decision_model_name?: string;
-  vision_base_url?: string;
-  vision_api_key?: string;
-  vision_model_name?: string;
-  thinking_mode?: 'fast' | 'deep' | 'turbo';
-  max_steps?: number;
-}
-
-export interface DualModelChatRequest {
-  device_id: string;
-  message: string;
-}
-
-// Dual Model SSE Event Types
-export interface DualModelDecisionStartEvent {
-  type: 'decision_start';
-  model: 'decision';
-  stage: string;
-  task?: string;
-  step: number;
-  timestamp: number;
-}
-
-export interface DualModelDecisionThinkingEvent {
-  type: 'decision_thinking';
-  model: 'decision';
-  chunk: string;
-  step: number;
-  timestamp: number;
-}
-
-export interface DualModelDecisionResultEvent {
-  type: 'decision_result';
-  model: 'decision';
-  decision: {
-    action: string;
-    target: string;
-    reasoning: string;
-    content?: string;
-    finished: boolean;
-  };
-  reasoning: string;
-  step: number;
-  timestamp: number;
-}
-
-export interface DualModelTaskPlanEvent {
-  type: 'task_plan';
-  model: 'decision';
-  plan: {
-    summary: string;
-    steps: string[];
-    estimated_actions: number;
-  };
-  step: number;
-  timestamp: number;
-}
-
-export interface DualModelVisionStartEvent {
-  type: 'vision_start';
-  model: 'vision';
-  stage: string;
-  step: number;
-  timestamp: number;
-}
-
-export interface DualModelVisionRecognitionEvent {
-  type: 'vision_recognition';
-  model: 'vision';
-  description: string;
-  current_app: string;
-  elements: string[];
-  step: number;
-  timestamp: number;
-}
-
-export interface DualModelActionStartEvent {
-  type: 'action_start';
-  model: 'vision';
-  action: {
-    action: string;
-    target: string;
-    content?: string;
-  };
-  step: number;
-  timestamp: number;
-}
-
-export interface DualModelActionResultEvent {
-  type: 'action_result';
-  model: 'vision';
-  success: boolean;
-  action_type: string;
-  target: string;
-  position?: [number, number];
-  message: string;
-  step: number;
-  timestamp: number;
-}
-
-export interface DualModelStepCompleteEvent {
-  type: 'step_complete';
-  step: number;
-  success: boolean;
-  finished: boolean;
-  timestamp: number;
-}
-
-export interface DualModelTaskCompleteEvent {
-  type: 'task_complete';
-  success: boolean;
-  message: string;
-  steps: number;
-  timestamp: number;
-}
-
-export interface DualModelErrorEvent {
-  type: 'error';
-  message: string;
-  timestamp: number;
-}
-
-export interface DualModelAbortedEvent {
-  type: 'aborted';
-  message: string;
-  timestamp: number;
-}
-
-export type DualModelStreamEvent =
-  | DualModelDecisionStartEvent
-  | DualModelDecisionThinkingEvent
-  | DualModelDecisionResultEvent
-  | DualModelTaskPlanEvent
-  | DualModelVisionStartEvent
-  | DualModelVisionRecognitionEvent
-  | DualModelActionStartEvent
-  | DualModelActionResultEvent
-  | DualModelStepCompleteEvent
-  | DualModelTaskCompleteEvent
-  | DualModelErrorEvent
-  | DualModelAbortedEvent;
-
-export interface DualModelStatusResponse {
-  active: boolean;
-  device_id?: string;
-  state?: {
-    decision: {
-      active: boolean;
-      stage: string;
-      thinking: string;
-      result: string;
-    };
-    vision: {
-      active: boolean;
-      stage: string;
-      description: string;
-      action: string;
-    };
-    progress: {
-      current_step: number;
-      total_steps: number;
-      task_plan: string[];
-    };
-  };
-}
-
-export async function initDualModel(
-  request: DualModelInitRequest
-): Promise<{ success: boolean; message: string; device_id?: string }> {
-  const res = await axios.post('/api/dual/init', request);
-  return res.data;
-}
-
-export function sendDualModelStream(
-  message: string,
-  deviceId: string,
-  onEvent: (event: DualModelStreamEvent) => void,
-  onError: (error: Error) => void
-): { close: () => void } {
-  const controller = new AbortController();
-
-  fetch('/api/dual/chat/stream', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ message, device_id: deviceId }),
-    signal: controller.signal,
-  })
-    .then(async response => {
-      if (!response.ok) {
-        let errorDetail = `HTTP error! status: ${response.status}`;
-        try {
-          const errorData = await response.json();
-          if (errorData.detail) {
-            errorDetail = errorData.detail;
-          }
-        } catch {
-          // 如果无法解析响应体，使用默认的状态码错误
-        }
-        throw new Error(errorDetail);
-      }
-
-      if (!response.body) {
-        throw new Error('Response body is null');
-      }
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-      let eventType = 'message';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          if (line.startsWith('event: ')) {
-            eventType = line.slice(7).trim();
-          } else if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              console.log('[DualModel SSE] Received event:', eventType, data);
-              onEvent(data as DualModelStreamEvent);
-            } catch (e) {
-              console.error('Failed to parse SSE data:', line, e);
-            }
-          }
-        }
-      }
-    })
-    .catch(error => {
-      if (error.name !== 'AbortError') {
-        onError(error);
-      }
-    });
-
-  return {
-    close: () => controller.abort(),
-  };
-}
-
-export async function abortDualModelChat(deviceId: string): Promise<{
-  success: boolean;
-  message: string;
-}> {
-  const res = await axios.post('/api/dual/chat/abort', { device_id: deviceId });
-  return res.data;
-}
-
-export async function getDualModelStatus(
-  deviceId?: string
-): Promise<DualModelStatusResponse> {
-  const url = deviceId
-    ? `/api/dual/status?device_id=${encodeURIComponent(deviceId)}`
-    : '/api/dual/status';
-  const res = await axios.get<DualModelStatusResponse>(url);
-  return res.data;
-}
-
-export async function resetDualModel(deviceId: string): Promise<{
-  success: boolean;
-  message: string;
-}> {
-  const res = await axios.post('/api/dual/reset', { device_id: deviceId });
-  return res.data;
 }
 
 // ==================== Layered Agent API ====================
@@ -1614,6 +1353,11 @@ export interface DouyinCommentVideoFilter {
   publish_time: 'default' | 'day' | 'week' | 'half_year';
   sort_by: 'latest' | 'most_liked' | 'default';
 }
+export type SearchMode = 'keyword' | 'douyin_index';
+
+export interface DouyinIndexFilter {
+  publish_time: 'default' | '3days' | '7days' | 'month';
+}
 
 export interface DouyinCommentInteraction {
   watch_video: boolean;
@@ -1651,14 +1395,24 @@ export interface DouyinCommentTask {
   uuid: string;
   name: string;
   device_id: string;
+  serial?: string; // 设备硬件序列号（稳定标识）
   search_keywords: string[];
+  search_mode: SearchMode;
   video_filter: DouyinCommentVideoFilter;
+  douyin_index_filter?: DouyinIndexFilter;
   interaction: DouyinCommentInteraction;
   comment: DouyinCommentConfig;
   content: DouyinCommentContent;
   execution: DouyinCommentExecution;
   cron_expression: string | null;
   end_time: string | null;
+
+  // Stability/backoff (optional for backward compatibility)
+  consecutive_failures?: number;
+  last_error?: string | null;
+  auto_paused_at?: string | null;
+  auto_pause_reason?: string | null;
+
   status: 'enabled' | 'disabled' | 'running';
   created_at: string;
   updated_at: string;
@@ -1669,8 +1423,11 @@ export interface DouyinCommentTask {
 export interface DouyinCommentTaskCreateRequest {
   name: string;
   device_id: string;
+  serial?: string; // 设备硬件序列号（稳定标识）
   search_keywords: string[];
+  search_mode?: SearchMode;
   video_filter?: Partial<DouyinCommentVideoFilter>;
+  douyin_index_filter?: Partial<DouyinIndexFilter>;
   interaction?: Partial<DouyinCommentInteraction>;
   comment?: Partial<DouyinCommentConfig>;
   content?: Partial<DouyinCommentContent>;
@@ -1683,8 +1440,11 @@ export interface DouyinCommentTaskCreateRequest {
 export interface DouyinCommentTaskUpdateRequest {
   name?: string;
   device_id?: string;
+  serial?: string; // 设备硬件序列号（稳定标识）
   search_keywords?: string[];
+  search_mode?: SearchMode;
   video_filter?: Partial<DouyinCommentVideoFilter>;
+  douyin_index_filter?: Partial<DouyinIndexFilter>;
   interaction?: Partial<DouyinCommentInteraction>;
   comment?: Partial<DouyinCommentConfig>;
   content?: Partial<DouyinCommentContent>;
@@ -1918,6 +1678,60 @@ export async function getDeviceName(
 ): Promise<DeviceNameResponse> {
   const res = await axios.get<DeviceNameResponse>(
     `/api/devices/${serial}/name`
+  );
+  return res.data;
+}
+
+// ==================== 连接历史 API ====================
+
+export interface ConnectionHistoryItem {
+  ip: string;
+  port: number;
+  serial: string | null;
+  model: string | null;
+  display_name: string | null;
+  last_connected: string;
+  connection_count: number;
+}
+
+export interface ConnectionHistoryListResponse {
+  success: boolean;
+  history: ConnectionHistoryItem[];
+}
+
+export interface ConnectionHistoryRemoveResponse {
+  success: boolean;
+  message: string;
+}
+
+export interface ConnectionHistoryUpdateNameResponse {
+  success: boolean;
+  message: string;
+}
+
+export async function getConnectionHistory(): Promise<ConnectionHistoryListResponse> {
+  const res = await axios.get<ConnectionHistoryListResponse>(
+    '/api/devices/connection_history'
+  );
+  return res.data;
+}
+
+export async function removeConnectionHistory(
+  ip: string
+): Promise<ConnectionHistoryRemoveResponse> {
+  const res = await axios.delete<ConnectionHistoryRemoveResponse>(
+    `/api/devices/connection_history/${encodeURIComponent(ip)}`
+  );
+  return res.data;
+}
+
+export async function updateConnectionHistoryName(
+  ip: string,
+  displayName: string | null
+): Promise<ConnectionHistoryUpdateNameResponse> {
+  const res = await axios.put<ConnectionHistoryUpdateNameResponse>(
+    `/api/devices/connection_history/${encodeURIComponent(ip)}/name`,
+    { display_name: displayName }
   );
   return res.data;
 }

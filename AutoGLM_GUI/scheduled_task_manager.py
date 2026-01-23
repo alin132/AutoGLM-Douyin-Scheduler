@@ -6,7 +6,7 @@ Features:
 - APScheduler 调度器
 - Cron 表达式支持
 - 任务执行历史记录
-- 支持多种执行模式（经典、双模型、分层代理）
+- 支持多种执行模式（经典、分层代理）
 """
 
 import asyncio
@@ -24,7 +24,6 @@ from AutoGLM_GUI.logger import logger
 class ExecutionMode(str, Enum):
     """执行模式."""
     CLASSIC = "classic"  # 经典模式（单模型）
-    DUAL_MODEL = "dual_model"  # 双模型协作
     LAYERED_AGENT = "layered_agent"  # 分层代理
 
 
@@ -75,7 +74,6 @@ class ScheduledTaskManager(BaseTaskManager):
         message: str,
         cron_expression: str,
         execution_mode: str = ExecutionMode.CLASSIC.value,
-        thinking_mode: str = "deep",
         enabled: bool = True,
     ) -> dict:
         """创建定时任务.
@@ -85,8 +83,7 @@ class ScheduledTaskManager(BaseTaskManager):
             device_id: 目标设备 ID
             message: 要执行的指令
             cron_expression: Cron 表达式 (分 时 日 月 周)
-            execution_mode: 执行模式 (classic/dual_model/layered_agent)
-            thinking_mode: 思考模式 (fast/deep/turbo)，仅双模型模式有效
+            execution_mode: 执行模式 (classic/layered_agent)
             enabled: 是否启用
 
         Returns:
@@ -108,7 +105,6 @@ class ScheduledTaskManager(BaseTaskManager):
             "message": message,
             "cron_expression": cron_expression,
             "execution_mode": execution_mode,
-            "thinking_mode": thinking_mode,
             "status": TaskStatus.ENABLED.value if enabled else TaskStatus.DISABLED.value,
             "created_at": datetime.now().isoformat(),
             "updated_at": datetime.now().isoformat(),
@@ -137,7 +133,6 @@ class ScheduledTaskManager(BaseTaskManager):
         message: str | None = None,
         cron_expression: str | None = None,
         execution_mode: str | None = None,
-        thinking_mode: str | None = None,
     ) -> dict | None:
         """更新任务."""
         tasks = self._load_tasks()
@@ -157,8 +152,6 @@ class ScheduledTaskManager(BaseTaskManager):
                     if execution_mode not in valid_modes:
                         raise ValueError(f"Invalid execution_mode: {execution_mode}")
                     task["execution_mode"] = execution_mode
-                if thinking_mode is not None:
-                    task["thinking_mode"] = thinking_mode
 
                 task["updated_at"] = datetime.now().isoformat()
                 self._save_tasks(tasks)

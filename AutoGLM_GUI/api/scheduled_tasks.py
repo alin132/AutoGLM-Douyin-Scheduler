@@ -14,8 +14,7 @@ class ScheduledTaskCreate(BaseModel):
     device_id: str
     message: str
     cron_expression: str
-    execution_mode: str = "classic"  # classic, dual_model, layered_agent
-    thinking_mode: str = "deep"  # fast, deep, turbo (仅双模型模式有效)
+    execution_mode: str = "classic"  # classic, layered_agent
     enabled: bool = True
 
     @field_validator("name")
@@ -51,17 +50,9 @@ class ScheduledTaskCreate(BaseModel):
     @field_validator("execution_mode")
     @classmethod
     def validate_execution_mode(cls, v: str) -> str:
-        valid_modes = ["classic", "dual_model", "layered_agent"]
+        valid_modes = ["classic", "layered_agent"]
         if v not in valid_modes:
             raise ValueError(f"execution_mode must be one of {valid_modes}")
-        return v
-
-    @field_validator("thinking_mode")
-    @classmethod
-    def validate_thinking_mode(cls, v: str) -> str:
-        valid_modes = ["fast", "deep", "turbo"]
-        if v not in valid_modes:
-            raise ValueError(f"thinking_mode must be one of {valid_modes}")
         return v
 
 
@@ -73,7 +64,6 @@ class ScheduledTaskUpdate(BaseModel):
     message: str | None = None
     cron_expression: str | None = None
     execution_mode: str | None = None
-    thinking_mode: str | None = None
 
     @field_validator("name")
     @classmethod
@@ -114,19 +104,9 @@ class ScheduledTaskUpdate(BaseModel):
     def validate_execution_mode(cls, v: str | None) -> str | None:
         if v is None:
             return None
-        valid_modes = ["classic", "dual_model", "layered_agent"]
+        valid_modes = ["classic", "layered_agent"]
         if v not in valid_modes:
             raise ValueError(f"execution_mode must be one of {valid_modes}")
-        return v
-
-    @field_validator("thinking_mode")
-    @classmethod
-    def validate_thinking_mode(cls, v: str | None) -> str | None:
-        if v is None:
-            return None
-        valid_modes = ["fast", "deep", "turbo"]
-        if v not in valid_modes:
-            raise ValueError(f"thinking_mode must be one of {valid_modes}")
         return v
 
 
@@ -139,7 +119,6 @@ class ScheduledTaskResponse(BaseModel):
     message: str
     cron_expression: str
     execution_mode: str = "classic"
-    thinking_mode: str = "deep"
     status: str
     created_at: str
     last_run: str | None
@@ -207,7 +186,6 @@ def create_scheduled_task(request: ScheduledTaskCreate) -> ScheduledTaskResponse
             message=request.message,
             cron_expression=request.cron_expression,
             execution_mode=request.execution_mode,
-            thinking_mode=request.thinking_mode,
             enabled=request.enabled,
         )
         return ScheduledTaskResponse(**task)
@@ -232,7 +210,6 @@ def update_scheduled_task(
             message=request.message,
             cron_expression=request.cron_expression,
             execution_mode=request.execution_mode,
-            thinking_mode=request.thinking_mode,
         )
         if not task:
             raise HTTPException(status_code=404, detail="Scheduled task not found")

@@ -14,6 +14,12 @@ from AutoGLM_GUI.adb_plus.qr_pair import qr_pairing_manager
 from AutoGLM_GUI.logger import logger
 
 from AutoGLM_GUI.schemas import (
+    ConnectionHistoryItem,
+    ConnectionHistoryListResponse,
+    ConnectionHistoryRemoveRequest,
+    ConnectionHistoryRemoveResponse,
+    ConnectionHistoryUpdateNameRequest,
+    ConnectionHistoryUpdateNameResponse,
     DeviceListResponse,
     DeviceNameResponse,
     DeviceNameUpdateRequest,
@@ -125,15 +131,18 @@ def get_device_status(device_id: str) -> dict:
     from AutoGLM_GUI.phone_agent_manager import PhoneAgentManager
 
     manager = PhoneAgentManager.get_instance()
+    from AutoGLM_GUI.device_manager import DeviceManager
+    device_manager = DeviceManager.get_instance()
+    device_key, _actual_device_id = device_manager.resolve_device_ids(device_id)
     
-    is_busy = manager.is_device_busy(device_id)
-    metadata = manager.get_metadata(device_id)
+    is_busy = manager.is_device_busy(device_key)
+    metadata = manager.get_metadata(device_key)
     
     return {
-        "device_id": device_id,
+        "device_id": device_key,
         "is_busy": is_busy,
         "state": metadata.state if metadata else None,
-        "initialized": manager.is_initialized(device_id),
+        "initialized": manager.is_initialized(device_key),
     }
 
 
@@ -284,11 +293,19 @@ def pair_wifi(request: WiFiPairRequest) -> WiFiPairResponse:
 def discover_mdns() -> MdnsDiscoverResponse:
     """Discover wireless ADB devices via mDNS."""
     from AutoGLM_GUI.adb import ADBConnection
-    from AutoGLM_GUI.adb_plus import discover_mdns_devices
+    from AutoGLM_GUI.adb_plus import discover_mdns_devices, extract_serial_from_mdns
+    import time
 
     try:
         conn = ADBConnection()
-        devices = discover_mdns_devices(conn.adb_path)
+        # 多次扫描合并结果，提高发现成功率
+        device_map: dict[str, object] = {}
+        for attempt in range(3):
+            devices = discover_mdns_devices(conn.adb_path)
+            for dev in devices:
+                device_map[dev.name] = dev
+            if attempt < 2:
+                time.sleep(0.5)
 
         device_responses = [
             MdnsDeviceResponse(
@@ -298,8 +315,9 @@ def discover_mdns() -> MdnsDiscoverResponse:
                 has_pairing=dev.has_pairing,
                 service_type=dev.service_type,
                 pairing_port=dev.pairing_port,
+                serial=extract_serial_from_mdns(dev.name),
             )
-            for dev in devices
+            for dev in device_map.values()
         ]
 
         return MdnsDiscoverResponse(
@@ -319,7 +337,7 @@ def discover_mdns() -> MdnsDiscoverResponse:
 
 
 @router.post("/api/devices/qr_pair/generate", response_model=QRPairGenerateResponse)
-def generate_qr_pairing(timeout: int = 90) -> QRPairGenerateResponse:
+def generate_qr_pairing(timeout: int = 180) -> QRPairGenerateResponse:
     """Generate QR code for wireless pairing and start mDNS listener.
 
     Args:
@@ -560,4 +578,82 @@ def get_device_name(serial: str) -> DeviceNameResponse:
             success=False,
             serial=serial,
             error=f"Internal error: {str(e)}",
+        )
+
+
+# ==================== 连接历史 API ====================
+
+
+@router.get("/api/devices/connection_history", response_model=ConnectionHistoryListResponse)
+def get_connection_history() -> ConnectionHistoryListResponse:
+    """获取设备连接历史.
+
+    Returns:
+        ConnectionHistoryListResponse 包含连接历史列表
+    """
+    from AutoGLM_GUI.device_manager import DeviceManager
+
+    device_manager = DeviceManager.get_instance()
+    history = device_manager.get_connection_history()
+
+    return ConnectionHistoryListResponse(
+        success=True,
+        history=[ConnectionHistoryItem(**h) for h in history],
+    )
+
+
+@router.delete("/api/devices/connection_history/{ip}")
+def remove_connection_history(ip: str) -> ConnectionHistoryRemoveResponse:
+    """删除连接历史记录.
+
+    Args:
+        ip: 设备 IP 地址
+
+    Returns:
+        ConnectionHistoryRemoveResponse
+    """
+    from AutoGLM_GUI.device_manager import DeviceManager
+
+    device_manager = DeviceManager.get_instance()
+    success = device_manager.remove_connection_history(ip)
+
+    if success:
+        return ConnectionHistoryRemoveResponse(
+            success=True,
+            message=f"已删除 {ip} 的连接记录",
+        )
+    else:
+        return ConnectionHistoryRemoveResponse(
+            success=False,
+            message=f"未找到 {ip} 的连接记录",
+        )
+
+
+@router.put("/api/devices/connection_history/{ip}/name")
+def update_connection_history_name(
+    ip: str, request: ConnectionHistoryUpdateNameRequest
+) -> ConnectionHistoryUpdateNameResponse:
+    """更新连接历史的自定义名称.
+
+    Args:
+        ip: 设备 IP 地址
+        request: 包含 display_name
+
+    Returns:
+        ConnectionHistoryUpdateNameResponse
+    """
+    from AutoGLM_GUI.device_manager import DeviceManager
+
+    device_manager = DeviceManager.get_instance()
+    success = device_manager.update_connection_history_name(ip, request.display_name)
+
+    if success:
+        return ConnectionHistoryUpdateNameResponse(
+            success=True,
+            message=f"已更新 {ip} 的名称",
+        )
+    else:
+        return ConnectionHistoryUpdateNameResponse(
+            success=False,
+            message=f"未找到 {ip} 的连接记录",
         )

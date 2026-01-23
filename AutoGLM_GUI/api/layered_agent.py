@@ -413,6 +413,8 @@ async def layered_agent_chat(request: LayeredAgentRequest) -> StreamingResponse:
         final_success = False
 
         try:
+            from AutoGLM_GUI.model_limiter import decision_limiter
+
             agent = _ensure_agent()
 
             session_id = request.session_id or request.device_id or "default"
@@ -420,12 +422,13 @@ async def layered_agent_chat(request: LayeredAgentRequest) -> StreamingResponse:
 
             effective_config = config_manager.get_effective_config()
 
-            result = Runner.run_streamed(
-                agent,
-                request.message,
-                max_turns=effective_config.layered_max_turns,
-                session=session,
-            )
+            async with decision_limiter.acquire_async():
+                result = Runner.run_streamed(
+                    agent,
+                    request.message,
+                    max_turns=effective_config.layered_max_turns,
+                    session=session,
+                )
 
             # 保存活跃运行实例，用于 abort
             with _active_runs_lock:

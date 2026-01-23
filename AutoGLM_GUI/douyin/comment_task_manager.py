@@ -31,7 +31,7 @@ VALID_DOUYIN_INDEX_PUBLISH_TIMES = {"default", "3days", "7days", "month"}
 
 # 默认配置
 DEFAULT_VIDEO_FILTER = {
-    "min_likes": 1000,
+    "min_likes": 0,
     "max_likes": 50000,
     "publish_time": "default",  # default, day, week, half_year
     "sort_by": "latest",  # latest, most_liked, default
@@ -364,14 +364,16 @@ class DouyinCommentTaskManager(BaseTaskManager):
             loop = asyncio.get_running_loop()
         except RuntimeError:
             # 没有运行中的事件循环，在新线程中执行
-            # 使用 _execute_task_and_reschedule 以获得超时保护
+            # 使用 _execute_task_and_reschedule 以获得超时保护（但不重调度）
             thread = threading.Thread(
-                target=lambda: asyncio.run(self._execute_task_and_reschedule(task)),
+                target=lambda: asyncio.run(
+                    self._execute_task_and_reschedule(task, reschedule=False)
+                ),
                 daemon=True,
             )
             thread.start()
             return True
-
+        self._schedule_task(uuid, loop, task, reschedule=False)
         self._schedule_task(uuid, loop, task)
         return True
 
@@ -393,9 +395,40 @@ class DouyinCommentTaskManager(BaseTaskManager):
                 logger.info(f"Resolved device_id by serial: {serial} -> {device_id}")
             else:
                 logger.warning(f"Device with serial {serial} not found, using stored device_id: {device_id}")
+            device_key = serial
+        else:
+            device_key = device_id
+            try:
+                from AutoGLM_GUI.device_manager import DeviceManager
+
+                device_manager = DeviceManager.get_instance()
+                resolved_serial, _actual_device_id = device_manager.resolve_device_ids(
+                    device_id
+                )
+                if resolved_serial:
+                    device_key = resolved_serial
+            except Exception as e:
+                logger.info(f"Failed to resolve device key for {device_id}: {e}")
+
+        # 向后兼容：补齐缺失字段默认值
+        task["video_filter"] = {
+            **DEFAULT_VIDEO_FILTER,
+            **(task.get("video_filter") or {}),
+        }
+        task["douyin_index_filter"] = {
+            **DEFAULT_DOUYIN_INDEX_FILTER,
+            **(task.get("douyin_index_filter") or {}),
+        }
+        task["interaction"] = {
+            **DEFAULT_INTERACTION,
+            **(task.get("interaction") or {}),
+        }
+        task["comment"] = {**DEFAULT_COMMENT, **(task.get("comment") or {})}
+        task["content"] = {**DEFAULT_CONTENT, **(task.get("content") or {})}
+        task["execution"] = {**DEFAULT_EXECUTION, **(task.get("execution") or {})}
 
         self._running_tasks.add(uuid)
-        self._task_device_map[uuid] = device_id
+        self._task_device_map[uuid] = device_key
         self._update_task_status(uuid, TaskStatus.RUNNING)
 
         # 推送任务开始事件

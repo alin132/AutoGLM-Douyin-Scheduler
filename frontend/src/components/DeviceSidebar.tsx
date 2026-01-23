@@ -10,6 +10,9 @@ import {
   Loader2,
   CheckCircle,
   XCircle,
+  History,
+  Trash2,
+  Edit2,
 } from 'lucide-react';
 import { DeviceCard } from './DeviceCard';
 import { Button } from '@/components/ui/button';
@@ -26,7 +29,12 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { QRCodeSVG } from 'qrcode.react';
-import type { Device, MdnsDevice, RemoteDeviceInfo } from '../api';
+import type {
+  Device,
+  MdnsDevice,
+  RemoteDeviceInfo,
+  ConnectionHistoryItem,
+} from '../api';
 import {
   addRemoteDevice,
   cancelQRPairing,
@@ -36,6 +44,9 @@ import {
   generateQRPairing,
   getQRPairingStatus,
   pairWifi,
+  getConnectionHistory,
+  removeConnectionHistory,
+  updateConnectionHistoryName,
 } from '../api';
 import { useTranslation } from '../lib/i18n-context';
 import { useDebouncedState } from '@/hooks/useDebouncedState';
@@ -146,6 +157,14 @@ export function DeviceSidebar({
     string | null
   >(null);
   const [isConnectingRemote, setIsConnectingRemote] = useState(false);
+
+  // 连接历史
+  const [connectionHistory, setConnectionHistory] = useState<
+    ConnectionHistoryItem[]
+  >([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [editingHistoryIp, setEditingHistoryIp] = useState<string | null>(null);
+  const [editingHistoryName, setEditingHistoryName] = useState('');
 
   useEffect(() => {
     localStorage.setItem('sidebar-collapsed', JSON.stringify(isCollapsed));
@@ -438,17 +457,79 @@ export function DeviceSidebar({
     }
   };
 
-  // Cleanup QR session when dialog closes or tab changes
+  // 连接历史处理函数
+  const loadConnectionHistory = useCallback(async () => {
+    setIsLoadingHistory(true);
+    try {
+      const result = await getConnectionHistory();
+      if (result.success) {
+        setConnectionHistory(result.history);
+      }
+    } catch (error) {
+      console.error('[DeviceSidebar] Error loading connection history:', error);
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  }, []);
+
+  const handleRemoveHistory = async (ip: string) => {
+    try {
+      const result = await removeConnectionHistory(ip);
+      if (result.success) {
+        setConnectionHistory(prev => prev.filter(h => h.ip !== ip));
+      }
+    } catch (error) {
+      console.error(
+        '[DeviceSidebar] Error removing connection history:',
+        error
+      );
+    }
+  };
+
+  const handleUpdateHistoryName = async (ip: string, name: string) => {
+    try {
+      const result = await updateConnectionHistoryName(ip, name || null);
+      if (result.success) {
+        setConnectionHistory(prev =>
+          prev.map(h =>
+            h.ip === ip ? { ...h, display_name: name || null } : h
+          )
+        );
+        setEditingHistoryIp(null);
+        setEditingHistoryName('');
+      }
+    } catch (error) {
+      console.error('[DeviceSidebar] Error updating history name:', error);
+    }
+  };
+
+  const handleHistoryItemClick = (item: ConnectionHistoryItem) => {
+    // 切换到直连标签页并填充 IP
+    setActiveTab('direct');
+    setManualConnectIp(item.ip);
+    setManualConnectPort(String(item.port));
+    setSelectedEmulator('custom');
+    setIpError('');
+    setPortError('');
+  };
+
+  // 加载连接历史（当切换到历史标签页时）
   useEffect(() => {
-    if (!showManualConnect || activeTab !== 'pair') {
-      if (qrSession && qrSession.status === 'listening') {
+    if (showManualConnect && activeTab === 'history') {
+      loadConnectionHistory();
+    }
+  }, [showManualConnect, activeTab, loadConnectionHistory]);
+
+  // Cleanup QR session when dialog closes
+  useEffect(() => {
+    if (!showManualConnect) {
+      if (qrSession) {
         handleCancelQRPairing();
       }
       stopQRStatusPolling();
     }
   }, [
     showManualConnect,
-    activeTab,
     qrSession,
     stopQRStatusPolling,
     handleCancelQRPairing,
@@ -635,21 +716,21 @@ export function DeviceSidebar({
           ) : (
             devices.map(device => (
               <DeviceCard
-                key={device.id}
-                id={device.id}
+                key={device.serial}
+                id={device.serial}
                 serial={device.serial}
                 model={device.model}
                 displayName={device.display_name}
                 status={device.status}
                 connectionType={device.connection_type}
                 agent={device.agent}
-                isActive={currentDeviceId === device.id}
-                onClick={() => onSelectDevice(device.id)}
+                isActive={currentDeviceId === device.serial}
+                onClick={() => onSelectDevice(device.serial)}
                 onConnectWifi={async () => {
-                  await onConnectWifi(device.id);
+                  await onConnectWifi(device.serial);
                 }}
                 onDisconnectWifi={async () => {
-                  await onDisconnectWifi(device.id);
+                  await onDisconnectWifi(device.serial);
                 }}
                 onNameUpdated={() => {
                   if (onRefreshDevices) {
@@ -691,7 +772,7 @@ export function DeviceSidebar({
               onValueChange={setActiveTab}
               className="w-full"
             >
-              <TabsList className="grid w-full grid-cols-3">
+              <TabsList className="grid w-full grid-cols-4">
                 <TabsTrigger value="direct">
                   {t.deviceSidebar.directConnectTab}
                 </TabsTrigger>
@@ -699,7 +780,10 @@ export function DeviceSidebar({
                   {t.deviceSidebar.pairTab}
                 </TabsTrigger>
                 <TabsTrigger value="remote">
-                  {t.deviceSidebar.remoteTab || '远程设备'}
+                  {t.deviceSidebar.remoteTab || '远程'}
+                </TabsTrigger>
+                <TabsTrigger value="history">
+                  {t.deviceSidebar.historyTab || '历史'}
                 </TabsTrigger>
               </TabsList>
 
@@ -737,10 +821,16 @@ export function DeviceSidebar({
                   </div>
                 )}
 
-                {/* Discovered Devices List - Filter has_pairing=false */}
+                {/* Discovered Devices List - Filter has_pairing=false and already connected */}
                 {(() => {
+                  // 获取已连接设备的 serial 列表
+                  const connectedSerials = new Set(
+                    devices.map(d => d.serial).filter(Boolean)
+                  );
                   const directDevices = discoveredDevices.filter(
-                    d => !d.has_pairing
+                    d =>
+                      !d.has_pairing &&
+                      (!d.serial || !connectedSerials.has(d.serial))
                   );
                   if (!isScanning && directDevices.length === 0) {
                     return (
@@ -1280,6 +1370,145 @@ export function DeviceSidebar({
                   >
                     {isConnectingRemote ? '正在连接...' : '连接远程设备'}
                   </Button>
+                )}
+              </TabsContent>
+
+              {/* History Tab */}
+              <TabsContent value="history" className="space-y-4 mt-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                    {t.deviceSidebar.connectionHistory || '连接历史'}
+                  </h3>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={loadConnectionHistory}
+                    disabled={isLoadingHistory}
+                    className="h-8"
+                  >
+                    {isLoadingHistory ? (
+                      <>
+                        <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                        {t.common.loading || '加载中'}
+                      </>
+                    ) : (
+                      t.deviceSidebar.refresh || '刷新'
+                    )}
+                  </Button>
+                </div>
+
+                {/* History description */}
+                <div className="rounded-lg bg-blue-50 dark:bg-blue-950/20 p-3 text-sm">
+                  <p className="text-blue-800 dark:text-blue-200">
+                    {t.deviceSidebar.historyDescription ||
+                      '点击历史记录可快速填充 IP 地址。由于无线调试端口可能变化，请在连接前确认端口号。'}
+                  </p>
+                </div>
+
+                {/* History list */}
+                {isLoadingHistory ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
+                  </div>
+                ) : connectionHistory.length === 0 ? (
+                  <div className="rounded-lg bg-slate-50 dark:bg-slate-900 p-4 text-center">
+                    <History className="mx-auto h-8 w-8 text-slate-400" />
+                    <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                      {t.deviceSidebar.noConnectionHistory || '暂无连接历史'}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {connectionHistory.map(item => (
+                      <div
+                        key={item.ip}
+                        className="rounded-lg border border-slate-200 dark:border-slate-700 p-3 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800"
+                      >
+                        <div className="flex items-start justify-between">
+                          <button
+                            onClick={() => handleHistoryItemClick(item)}
+                            className="flex-1 text-left"
+                          >
+                            <div className="flex items-center gap-2">
+                              <Smartphone className="h-4 w-4 text-[#1d9bf0]" />
+                              {editingHistoryIp === item.ip ? (
+                                <Input
+                                  value={editingHistoryName}
+                                  onChange={e =>
+                                    setEditingHistoryName(e.target.value)
+                                  }
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter') {
+                                      handleUpdateHistoryName(
+                                        item.ip,
+                                        editingHistoryName
+                                      );
+                                    } else if (e.key === 'Escape') {
+                                      setEditingHistoryIp(null);
+                                      setEditingHistoryName('');
+                                    }
+                                  }}
+                                  onBlur={() =>
+                                    handleUpdateHistoryName(
+                                      item.ip,
+                                      editingHistoryName
+                                    )
+                                  }
+                                  className="h-6 w-32 text-sm"
+                                  autoFocus
+                                  onClick={e => e.stopPropagation()}
+                                />
+                              ) : (
+                                <span className="font-medium text-slate-900 dark:text-slate-100">
+                                  {item.display_name ||
+                                    item.model ||
+                                    item.serial ||
+                                    t.deviceCard.unknownDevice ||
+                                    '未知设备'}
+                                </span>
+                              )}
+                            </div>
+                            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                              {item.ip}:{item.port}
+                            </p>
+                            <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+                              {t.deviceSidebar.lastConnected || '最后连接'}:{' '}
+                              {new Date(item.last_connected).toLocaleString()}
+                              {item.connection_count > 1 &&
+                                ` · 连接 ${item.connection_count} 次`}
+                            </p>
+                          </button>
+                          <div className="flex items-center gap-1 ml-2">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={e => {
+                                e.stopPropagation();
+                                setEditingHistoryIp(item.ip);
+                                setEditingHistoryName(item.display_name || '');
+                              }}
+                              title={t.common.edit || '编辑'}
+                            >
+                              <Edit2 className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20"
+                              onClick={e => {
+                                e.stopPropagation();
+                                handleRemoveHistory(item.ip);
+                              }}
+                              title={t.common.delete || '删除'}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </TabsContent>
             </Tabs>

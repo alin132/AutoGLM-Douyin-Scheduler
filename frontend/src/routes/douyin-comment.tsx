@@ -164,7 +164,7 @@ const defaultFormData: FormData = {
   search_keywords: '',
   search_mode: 'keyword' as SearchMode,
   video_filter: {
-    min_likes: 1000,
+    min_likes: 0,
     max_likes: 50000,
     publish_time: 'default' as const,
     sort_by: 'latest' as const,
@@ -223,7 +223,6 @@ function DouyinCommentComponent() {
     province.includes(regionQuery.trim())
   );
 
-
   // 处理任务事件的回调
   const handleTaskEvent = useCallback(
     (event: {
@@ -236,7 +235,9 @@ function DouyinCommentComponent() {
       // 更新本地任务状态
       setTasks(prev =>
         prev.map(t =>
-          t.uuid === event.task_uuid ? { ...t, status: event.status as DouyinCommentTask['status'] } : t
+          t.uuid === event.task_uuid
+            ? { ...t, status: event.status as DouyinCommentTask['status'] }
+            : t
         )
       );
       // 如果任务完成/失败/中止，重新加载完整数据
@@ -390,7 +391,7 @@ function DouyinCommentComponent() {
             .filter(t => t.trim()),
         },
         execution: formData.execution,
-        cron_expression: formData.cron_expression,  // 空字符串让后端清除定时
+        cron_expression: formData.cron_expression, // 空字符串让后端清除定时
         end_time: formData.end_time || undefined,
       };
       if (editingTask) {
@@ -573,9 +574,7 @@ function DouyinCommentComponent() {
       <div className="flex justify-between items-center mb-4 shrink-0">
         <div className="flex items-center gap-3">
           <MessageCircle className="w-6 h-6" />
-          <h1 className="text-xl font-bold">
-            {t.douyinComment.title}
-          </h1>
+          <h1 className="text-xl font-bold">{t.douyinComment.title}</h1>
         </div>
         <Button onClick={handleCreate} size="sm">
           <Plus className="w-4 h-4 mr-1" />
@@ -651,16 +650,20 @@ function DouyinCommentComponent() {
                     );
                   })()}
 
-                  {task.status === 'disabled' && task.auto_paused_at && task.auto_pause_reason && (
-                    <div
-                      className="text-xs text-red-500 truncate"
-                      title={task.auto_pause_reason}
-                    >
-                      {t.douyinComment.autoPausedShort}: {task.auto_pause_reason}
-                    </div>
-                  )}
+                  {task.status === 'disabled' &&
+                    task.auto_paused_at &&
+                    task.auto_pause_reason && (
+                      <div
+                        className="text-xs text-red-500 truncate"
+                        title={task.auto_pause_reason}
+                      >
+                        {t.douyinComment.autoPausedShort}:{' '}
+                        {task.auto_pause_reason}
+                      </div>
+                    )}
                   <div className="text-xs text-slate-400">
-                    {t.douyinComment.nextRunShort}: {formatDateTime(task.next_run)}
+                    {t.douyinComment.nextRunShort}:{' '}
+                    {formatDateTime(task.next_run)}
                   </div>
                   {/* 操作按钮 */}
                   <div className="flex flex-wrap gap-1 pt-2">
@@ -734,16 +737,22 @@ function DouyinCommentComponent() {
         <DialogContent className="sm:max-w-[700px] max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              {editingTask ? t.douyinComment.editTask : t.douyinComment.createTask}
+              {editingTask
+                ? t.douyinComment.editTask
+                : t.douyinComment.createTask}
             </DialogTitle>
           </DialogHeader>
           <Tabs defaultValue="basic" className="w-full">
             <TabsList className="grid w-full grid-cols-3 mb-4">
-              <TabsTrigger value="basic">{t.douyinComment.tabBasic}</TabsTrigger>
+              <TabsTrigger value="basic">
+                {t.douyinComment.tabBasic}
+              </TabsTrigger>
               <TabsTrigger value="behavior">
                 {t.douyinComment.tabBehavior}
               </TabsTrigger>
-              <TabsTrigger value="content">{t.douyinComment.tabContent}</TabsTrigger>
+              <TabsTrigger value="content">
+                {t.douyinComment.tabContent}
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="basic" className="space-y-4">
@@ -895,7 +904,8 @@ function DouyinCommentComponent() {
                               ? t.douyinComment.publishTimeDay
                               : formData.video_filter.publish_time === 'week'
                                 ? t.douyinComment.publishTimeWeek
-                                : formData.video_filter.publish_time === 'half_year'
+                                : formData.video_filter.publish_time ===
+                                    'half_year'
                                   ? t.douyinComment.publishTimeHalfYear
                                   : t.douyinComment.publishTimeDefault}
                           </span>
@@ -927,7 +937,10 @@ function DouyinCommentComponent() {
                             ...prev,
                             video_filter: {
                               ...prev.video_filter,
-                              sort_by: value as 'latest' | 'most_liked' | 'default',
+                              sort_by: value as
+                                | 'latest'
+                                | 'most_liked'
+                                | 'default',
                             },
                           }))
                         }
@@ -974,20 +987,28 @@ function DouyinCommentComponent() {
                             ...prev,
                             douyin_index_filter: {
                               ...prev.douyin_index_filter,
-                              publish_time: value as 'default' | '3days' | '7days' | 'month',
+                              publish_time: value as
+                                | 'default'
+                                | '3days'
+                                | '7days'
+                                | 'month',
                             },
                           }))
                         }
                       >
                         <SelectTrigger className="rounded-none">
                           <span>
-                            {formData.douyin_index_filter.publish_time === '3days'
+                            {formData.douyin_index_filter.publish_time ===
+                            '3days'
                               ? t.douyinComment.douyinIndexPublishTime3Days
-                              : formData.douyin_index_filter.publish_time === '7days'
+                              : formData.douyin_index_filter.publish_time ===
+                                  '7days'
                                 ? t.douyinComment.douyinIndexPublishTime7Days
-                                : formData.douyin_index_filter.publish_time === 'month'
+                                : formData.douyin_index_filter.publish_time ===
+                                    'month'
                                   ? t.douyinComment.douyinIndexPublishTimeMonth
-                                  : t.douyinComment.douyinIndexPublishTimeDefault}
+                                  : t.douyinComment
+                                      .douyinIndexPublishTimeDefault}
                           </span>
                         </SelectTrigger>
                         <SelectContent>
@@ -1186,7 +1207,9 @@ function DouyinCommentComponent() {
                 </Label>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="flex items-center justify-between">
-                    <Label className="text-sm">{t.douyinComment.watchVideo}</Label>
+                    <Label className="text-sm">
+                      {t.douyinComment.watchVideo}
+                    </Label>
                     <Switch
                       checked={formData.interaction.watch_video}
                       onCheckedChange={checked =>
@@ -1201,7 +1224,9 @@ function DouyinCommentComponent() {
                     />
                   </div>
                   <div className="flex items-center justify-between">
-                    <Label className="text-sm">{t.douyinComment.likeVideo}</Label>
+                    <Label className="text-sm">
+                      {t.douyinComment.likeVideo}
+                    </Label>
                     <Switch
                       checked={formData.interaction.like_video}
                       onCheckedChange={checked =>

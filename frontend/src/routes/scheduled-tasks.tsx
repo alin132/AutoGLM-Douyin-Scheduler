@@ -13,6 +13,7 @@ import {
   type ScheduledTask,
   type TaskHistory,
   type Device,
+  type ExecutionMode,
   getErrorMessage,
 } from '../api';
 import { Button } from '@/components/ui/button';
@@ -74,7 +75,7 @@ function ScheduledTasksComponent() {
     device_id: '',
     message: '',
     cron_expression: '0 9 * * *',
-    execution_mode: 'classic' as 'classic' | 'layered_agent',
+    execution_mode: 'classic' as ExecutionMode,
     enabled: true,
   });
   const [saving, setSaving] = useState(false);
@@ -526,7 +527,7 @@ function ScheduledTasksComponent() {
                 onValueChange={value =>
                   setFormData(prev => ({
                     ...prev,
-                    execution_mode: value as 'classic' | 'layered_agent',
+                    execution_mode: value as ExecutionMode,
                   }))
                 }
               >

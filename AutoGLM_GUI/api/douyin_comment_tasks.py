@@ -6,9 +6,11 @@ from pydantic import BaseModel
 from AutoGLM_GUI.douyin.comment_task_manager import (
     DEFAULT_COMMENT,
     DEFAULT_CONTENT,
+    DEFAULT_DOUYIN_INDEX_FILTER,
     DEFAULT_EXECUTION,
     DEFAULT_INTERACTION,
     DEFAULT_VIDEO_FILTER,
+    SEARCH_MODE_KEYWORD,
     douyin_comment_task_manager,
 )
 
@@ -61,13 +63,20 @@ class ExecutionConfig(BaseModel):
     video_interval_min: int = DEFAULT_EXECUTION["video_interval_min"]
     video_interval_max: int = DEFAULT_EXECUTION["video_interval_max"]
 
+class DouyinIndexFilterConfig(BaseModel):
+    """抖音指数筛选配置."""
+    publish_time: str = DEFAULT_DOUYIN_INDEX_FILTER["publish_time"]
+
 
 class TaskCreateRequest(BaseModel):
     """创建任务请求."""
     name: str
     device_id: str
+    serial: str | None = None  # 设备硬件序列号（稳定标识）
     search_keywords: list[str]
+    search_mode: str = SEARCH_MODE_KEYWORD  # keyword 或 douyin_index
     video_filter: VideoFilterConfig | None = None
+    douyin_index_filter: DouyinIndexFilterConfig | None = None
     interaction: InteractionConfig | None = None
     comment: CommentConfig | None = None
     content: ContentConfig | None = None
@@ -81,8 +90,11 @@ class TaskUpdateRequest(BaseModel):
     """更新任务请求."""
     name: str | None = None
     device_id: str | None = None
+    serial: str | None = None  # 设备硬件序列号（稳定标识）
     search_keywords: list[str] | None = None
+    search_mode: str | None = None
     video_filter: VideoFilterConfig | None = None
+    douyin_index_filter: DouyinIndexFilterConfig | None = None
     interaction: InteractionConfig | None = None
     comment: CommentConfig | None = None
     content: ContentConfig | None = None
@@ -93,17 +105,28 @@ class TaskUpdateRequest(BaseModel):
 
 class TaskResponse(BaseModel):
     """任务响应."""
+
     uuid: str
     name: str
     device_id: str
+    serial: str | None = None  # 设备硬件序列号（稳定标识）
     search_keywords: list[str]
+    search_mode: str = SEARCH_MODE_KEYWORD
     video_filter: dict
+    douyin_index_filter: dict | None = None
     interaction: dict
     comment: dict
     content: dict
     execution: dict
     cron_expression: str | None
     end_time: str | None = None
+
+    # 稳定性/失败退避相关字段（可选，旧任务可能不存在）
+    consecutive_failures: int = 0
+    last_error: str | None = None
+    auto_paused_at: str | None = None
+    auto_pause_reason: str | None = None
+
     status: str
     created_at: str
     updated_at: str
@@ -165,8 +188,11 @@ def create_task(request: TaskCreateRequest):
         task = douyin_comment_task_manager.create_task(
             name=request.name,
             device_id=request.device_id,
+            serial=request.serial,
             search_keywords=request.search_keywords,
+            search_mode=request.search_mode,
             video_filter=request.video_filter.model_dump() if request.video_filter else None,
+            douyin_index_filter=request.douyin_index_filter.model_dump() if request.douyin_index_filter else None,
             interaction=request.interaction.model_dump() if request.interaction else None,
             comment=request.comment.model_dump() if request.comment else None,
             content=request.content.model_dump() if request.content else None,
@@ -189,10 +215,16 @@ def update_task(task_uuid: str, request: TaskUpdateRequest):
             update_data["name"] = request.name
         if request.device_id is not None:
             update_data["device_id"] = request.device_id
+        if request.serial is not None:
+            update_data["serial"] = request.serial
         if request.search_keywords is not None:
             update_data["search_keywords"] = request.search_keywords
+        if request.search_mode is not None:
+            update_data["search_mode"] = request.search_mode
         if request.video_filter is not None:
             update_data["video_filter"] = request.video_filter.model_dump()
+        if request.douyin_index_filter is not None:
+            update_data["douyin_index_filter"] = request.douyin_index_filter.model_dump()
         if request.interaction is not None:
             update_data["interaction"] = request.interaction.model_dump()
         if request.comment is not None:

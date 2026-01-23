@@ -98,7 +98,7 @@ function ChatComponent() {
           (d: Device) => d.connection_type === 'wifi'
         );
         const selectedDevice = wifiDevice || devices[0];
-        deviceMap.set(selectedDevice.id, selectedDevice);
+        deviceMap.set(selectedDevice.serial, selectedDevice);
       });
 
       const filteredDevices = Array.from(deviceMap.values());
@@ -112,22 +112,22 @@ function ChatComponent() {
             d => d.serial === urlSerial
           );
           if (deviceFromUrl) {
-            setCurrentDeviceId(deviceFromUrl.id);
+            setCurrentDeviceId(deviceFromUrl.serial);
           } else {
             // URL serial not found, fallback to first device
-            setCurrentDeviceId(filteredDevices[0].id);
+            setCurrentDeviceId(filteredDevices[0].serial);
           }
         } else if (!currentDeviceId) {
-          setCurrentDeviceId(filteredDevices[0].id);
+          setCurrentDeviceId(filteredDevices[0].serial);
         }
         setInitialDeviceSet(true);
       }
 
       if (
         currentDeviceId &&
-        !filteredDevices.find(d => d.id === currentDeviceId)
+        !filteredDevices.find(d => d.serial === currentDeviceId)
       ) {
-        setCurrentDeviceId(filteredDevices[0]?.id || '');
+        setCurrentDeviceId(filteredDevices[0]?.serial || '');
       }
     } catch (error) {
       console.error('Failed to load devices:', error);
@@ -152,7 +152,7 @@ function ChatComponent() {
   // Sync state changes to URL search params
   useEffect(() => {
     // Get current device's serial
-    const currentDevice = devices.find(d => d.id === currentDeviceId);
+    const currentDevice = devices.find(d => d.serial === currentDeviceId);
     const currentSerial = currentDevice?.serial;
 
     // Only update URL after initial device selection is done
@@ -333,23 +333,23 @@ function ChatComponent() {
               <div
                 key={device.serial}
                 className={`w-full max-w-7xl flex items-stretch justify-center min-h-0 ${
-                  device.id === currentDeviceId ? '' : 'hidden'
+                  device.serial === currentDeviceId ? '' : 'hidden'
                 }`}
               >
                 {chatMode === 'chatkit' ? (
                   <div className="w-full flex items-stretch justify-center">
                     <ChatKitPanel
-                      deviceId={device.id}
+                      deviceId={device.serial}
                       deviceSerial={device.serial}
                       deviceName={device.model}
                       deviceConnectionType={device.connection_type}
-                      isVisible={device.id === currentDeviceId}
+                      isVisible={device.serial === currentDeviceId}
                     />
                   </div>
                 ) : (
                   <div className="w-full flex items-stretch justify-center">
                     <DevicePanel
-                      deviceId={device.id}
+                      deviceId={device.serial}
                       deviceSerial={device.serial}
                       deviceName={device.model}
                       deviceConnectionType={device.connection_type}

@@ -202,7 +202,7 @@ class QRPairingManager:
         self._sessions: Dict[str, PairingSession] = {}
 
     def create_session(
-        self, timeout: int = 90, adb_path: str = "adb"
+        self, timeout: int = 180, adb_path: str = "adb"
     ) -> PairingSession:
         """Create a new pairing session with QR code.
 

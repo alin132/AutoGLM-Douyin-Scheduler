@@ -70,19 +70,7 @@ uvx autoglm-gui
 
 ## 📸 Screenshots
 
-Quick jump: [Classic Mode](#mode-classic) · [Dual Model (Enhanced)](#mode-dual) · [Layered Agent (Enhanced)](#mode-layered)
-
-### Dual Model Architecture
-
-**Decision model (e.g., GLM-4.7) + Vision model (AutoGLM-Phone)**: the decision model plans and recovers from errors, while the vision model observes the UI and executes actions—better for longer and more complex flows.
-
-- 🧠 **Decision layer**: task understanding / step planning / exception recovery
-- 👁️ **Execution layer**: identify UI elements and click / swipe / type to operate
-- 🔄 **Runtime loop**: plan → execute → feedback; re-plan when needed
-
-**Thinking modes**: TURBO (fastest & cheapest for routine flows) / DEEP (most robust for complex tasks) / FAST (quick for lightweight tasks).
-
-<img width="879" height="849" alt="Dual Model UI" src="https://github.com/user-attachments/assets/15e5cf51-5a19-403d-9af3-46f77c2068f5" />
+Quick jump: [Classic Mode](#mode-classic) · [Layered Agent (Enhanced)](#mode-layered)
 
 ### Layered Agent
 
@@ -253,19 +241,6 @@ This is the **default Open AutoGLM-Phone experience**: a single vision model com
 - **Pros**: simplest setup, fastest to get started
 - **Best for**: clear goals with fewer steps (e.g., open an app, simple navigation)
 
-<a id="mode-dual"></a>
-### 🧠 Dual Model Mode (Enhanced)
-
-Dual model mode combines a **decision model (planning & recovery)** with a **vision model (UI execution)** for better stability and controllability on harder tasks.
-
-**Thinking modes**:
-- **TURBO (recommended)**: plan an action sequence once, batch-execute; re-plan only on errors
-- **DEEP**: involve the decision model at every step for maximum robustness
-- **FAST**: step-by-step decisions with shorter prompts for quicker responses
-
-**Config tips**:
-- **Decision model**: use a strong planning/reasoning model (GLM-4.7 / GPT-4 / Claude, etc.)
-- **Vision model**: use a GUI-capable model (AutoGLM-Phone-9B / `autoglm-phone`)
 
 <a id="mode-layered"></a>
 ### 🧩 Layered Agent Mode (Enhanced / Experimental)

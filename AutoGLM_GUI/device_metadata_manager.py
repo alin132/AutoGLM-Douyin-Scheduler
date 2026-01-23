@@ -12,6 +12,51 @@ from typing import Optional
 from AutoGLM_GUI.logger import logger
 
 DISPLAY_NAME_MAX_LENGTH = 100
+MAX_CONNECTION_HISTORY = 50  # 最多保存50条连接历史
+
+
+@dataclass
+class DeviceConnectionHistory:
+    """设备连接历史记录."""
+    
+    ip: str  # 设备 IP 地址
+    port: int  # 最后使用的端口
+    serial: Optional[str] = None  # 硬件序列号（如果获取到）
+    model: Optional[str] = None  # 设备型号
+    display_name: Optional[str] = None  # 用户自定义名称
+    last_connected: datetime = field(default_factory=datetime.now)
+    connection_count: int = 1  # 连接次数
+    
+    def to_dict(self) -> dict:
+        """Convert to serializable dict."""
+        return {
+            "ip": self.ip,
+            "port": self.port,
+            "serial": self.serial,
+            "model": self.model,
+            "display_name": self.display_name,
+            "last_connected": self.last_connected.isoformat(),
+            "connection_count": self.connection_count,
+        }
+    
+    @classmethod
+    def from_dict(cls, data: dict) -> "DeviceConnectionHistory":
+        """Create instance from dict."""
+        last_connected_str = data.get("last_connected")
+        last_connected = (
+            datetime.fromisoformat(last_connected_str)
+            if last_connected_str
+            else datetime.now()
+        )
+        return cls(
+            ip=data.get("ip", ""),
+            port=data.get("port", 5555),
+            serial=data.get("serial"),
+            model=data.get("model"),
+            display_name=data.get("display_name"),
+            last_connected=last_connected,
+            connection_count=data.get("connection_count", 1),
+        )
 
 
 @dataclass
@@ -65,11 +110,14 @@ class DeviceMetadataManager:
         self.storage_dir = storage_dir
         self.storage_dir.mkdir(parents=True, exist_ok=True)
         self.metadata_file = self.storage_dir / "metadata.json"
+        self.connection_history_file = self.storage_dir / "connection_history.json"
 
         self._metadata: dict[str, DeviceMetadata] = {}
+        self._connection_history: dict[str, DeviceConnectionHistory] = {}  # key: IP
         self._data_lock = threading.RLock()
 
         self._load_metadata()
+        self._load_connection_history()
 
     @classmethod
     def get_instance(cls, storage_dir: Optional[Path] = None) -> DeviceMetadataManager:
@@ -172,3 +220,144 @@ class DeviceMetadataManager:
         """List all stored device metadata."""
         with self._data_lock:
             return dict(self._metadata)
+
+    # ==================== 连接历史管理 ====================
+
+    def _load_connection_history(self) -> None:
+        """从磁盘加载连接历史."""
+        if not self.connection_history_file.exists():
+            logger.debug("No connection history file found")
+            return
+
+        try:
+            with open(self.connection_history_file, encoding="utf-8") as f:
+                data = json.load(f)
+
+            with self._data_lock:
+                self._connection_history = {
+                    ip: DeviceConnectionHistory.from_dict(hist_dict)
+                    for ip, hist_dict in data.items()
+                }
+
+            logger.info(f"Loaded {len(self._connection_history)} connection history record(s)")
+        except Exception as e:
+            logger.error(f"Failed to load connection history: {e}")
+            self._connection_history = {}
+
+    def _save_connection_history(self) -> None:
+        """保存连接历史到磁盘."""
+        temp_path = self.connection_history_file.with_suffix(".json.tmp")
+        try:
+            with self._data_lock:
+                data = {
+                    ip: hist.to_dict() for ip, hist in self._connection_history.items()
+                }
+
+            with open(temp_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+
+            temp_path.replace(self.connection_history_file)
+            logger.debug(f"Saved {len(self._connection_history)} connection history record(s)")
+        except Exception as e:
+            logger.error(f"Failed to save connection history: {e}")
+            if temp_path.exists():
+                temp_path.unlink()
+            raise
+
+    def add_connection_history(
+        self,
+        ip: str,
+        port: int,
+        serial: Optional[str] = None,
+        model: Optional[str] = None,
+        display_name: Optional[str] = None,
+    ) -> None:
+        """添加或更新连接历史.
+        
+        Args:
+            ip: 设备 IP 地址
+            port: 连接端口
+            serial: 硬件序列号
+            model: 设备型号
+            display_name: 用户自定义名称
+        """
+        with self._data_lock:
+            if ip in self._connection_history:
+                # 更新现有记录
+                hist = self._connection_history[ip]
+                hist.port = port
+                hist.last_connected = datetime.now()
+                hist.connection_count += 1
+                # 只有新值才更新
+                if serial:
+                    hist.serial = serial
+                if model:
+                    hist.model = model
+                if display_name:
+                    hist.display_name = display_name
+            else:
+                # 新增记录
+                self._connection_history[ip] = DeviceConnectionHistory(
+                    ip=ip,
+                    port=port,
+                    serial=serial,
+                    model=model,
+                    display_name=display_name,
+                )
+
+            # 限制历史记录数量
+            if len(self._connection_history) > MAX_CONNECTION_HISTORY:
+                # 按最后连接时间排序，删除最旧的
+                sorted_items = sorted(
+                    self._connection_history.items(),
+                    key=lambda x: x[1].last_connected,
+                    reverse=True,
+                )
+                self._connection_history = dict(sorted_items[:MAX_CONNECTION_HISTORY])
+
+            self._save_connection_history()
+
+        logger.info(f"Added/updated connection history for {ip}:{port}")
+
+    def get_connection_history(self) -> list[DeviceConnectionHistory]:
+        """获取所有连接历史，按最后连接时间排序."""
+        with self._data_lock:
+            return sorted(
+                self._connection_history.values(),
+                key=lambda x: x.last_connected,
+                reverse=True,
+            )
+
+    def get_connection_history_by_ip(self, ip: str) -> Optional[DeviceConnectionHistory]:
+        """根据 IP 获取连接历史."""
+        with self._data_lock:
+            return self._connection_history.get(ip)
+
+    def remove_connection_history(self, ip: str) -> bool:
+        """删除连接历史."""
+        with self._data_lock:
+            if ip in self._connection_history:
+                del self._connection_history[ip]
+                self._save_connection_history()
+                logger.info(f"Removed connection history for {ip}")
+                return True
+            return False
+
+    def update_connection_history_name(
+        self, ip: str, display_name: Optional[str]
+    ) -> bool:
+        """更新连接历史的自定义名称."""
+        with self._data_lock:
+            if ip in self._connection_history:
+                self._connection_history[ip].display_name = display_name
+                self._save_connection_history()
+                logger.info(f"Updated connection history name for {ip}: {display_name}")
+                return True
+            return False
+
+    def clear_connection_history(self) -> None:
+        """清空所有连接历史."""
+        with self._data_lock:
+            self._connection_history.clear()
+            self._save_connection_history()
+        logger.info("Cleared all connection history")

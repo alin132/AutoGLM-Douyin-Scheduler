@@ -8,8 +8,6 @@ slug: /
 
 AutoGLM 手机助手的现代化 Web 图形界面 - 让 AI 自动化操作 Android 设备变得简单
 
-**🎉 双模型协作架构现已上线！决策大模型 + 视觉小模型，智能任务规划与精准执行分离，性能提升 60%！🎉**
-
 ![Python](https://img.shields.io/badge/python-3.10+-blue.svg)
 ![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)
 [![PyPI](https://img.shields.io/pypi/v/autoglm-gui)](https://pypi.org/project/autoglm-gui/)
@@ -23,7 +21,6 @@ AutoGLM 手机助手的现代化 Web 图形界面 - 让 AI 自动化操作 Andro
 
 ## ✨ 特性
 
-- **🧠 双模型协作** - 🆕 决策大模型 + 视觉小模型协作架构，智能任务规划与精准执行分离，支持三种工作模式（DEEP/FAST/TURBO）
 - **完全无线配对** - 🆕 支持 Android 11+ 二维码扫码配对，无需数据线即可连接设备
 - **多设备并发控制** - 同时管理和控制多个 Android 设备，设备间状态完全隔离
 - **对话式任务管理** - 通过聊天界面控制 Android 设备

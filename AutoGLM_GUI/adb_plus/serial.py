@@ -51,7 +51,11 @@ _SERIAL_PROPS = [
 ]
 
 
-def get_device_serial(device_id: str, adb_path: str = "adb") -> str:
+def get_device_serial(
+    device_id: str,
+    adb_path: str = "adb",
+    device_status: str = "device",
+) -> str:
     """
     Get the real hardware serial number of a device.
 
@@ -66,6 +70,7 @@ def get_device_serial(device_id: str, adb_path: str = "adb") -> str:
     Args:
         device_id: The device ID (can be USB serial or IP:port for WiFi)
         adb_path: Path to adb executable (default: "adb")
+        device_status: Device status from adb devices ("device", "offline", etc.)
 
     Returns:
         The device hardware serial number. Always returns a value - uses
@@ -78,6 +83,15 @@ def get_device_serial(device_id: str, adb_path: str = "adb") -> str:
     if mdns_serial:
         logger.debug(f"Extracted serial from mDNS name: {device_id} → {mdns_serial}")
         return mdns_serial
+
+    # Only try getprop if device is online (status == "device")
+    # Offline/unauthorized devices will fail getprop, causing incorrect fallback
+    if device_status != "device":
+        logger.debug(
+            f"Device {device_id} is {device_status}, skipping getprop "
+            f"(will use device_id as serial)"
+        )
+        return device_id
 
     # Try multiple serial properties (some emulators use different props)
     for prop in _SERIAL_PROPS:

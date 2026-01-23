@@ -123,28 +123,34 @@ def create_app() -> FastAPI:
             """Execute a scheduled task using PhoneAgentManager."""
             from AutoGLM_GUI.logger import logger
             from AutoGLM_GUI.model_limiter import execution_limiter
+            from AutoGLM_GUI.device_manager import DeviceManager
 
+            device_manager = DeviceManager.get_instance()
+            device_key, _actual_device_id = device_manager.resolve_device_ids(device_id)
             logger.info(
                 f"Executing scheduled task {task_uuid}: "
-                f"device={device_id}, mode={execution_mode}"
+                f"device={device_id} (key={device_key}), mode={execution_mode}"
             )
+
 
             manager = PhoneAgentManager.get_instance()
 
             # Try to acquire the device with timeout
             acquired = manager.acquire_device(
-                device_id,
+                device_key,
                 timeout=5,  # 等待 5 秒
                 raise_on_timeout=False,
                 auto_initialize=True,
             )
 
             if not acquired:
-                raise RuntimeError(f"Device {device_id} is busy or unavailable (可能正在被聊天界面使用)")
+                raise RuntimeError(
+                    f"Device {device_id} is busy or unavailable (可能正在被聊天界面使用)"
+                )
 
             try:
                 agent = manager.get_agent_with_context(
-                    device_id, context="scheduled-task", agent_type="glm"
+                    device_key, context="scheduled-task", agent_type="glm"
                 )
 
                 with execution_limiter.acquire():
@@ -154,7 +160,8 @@ def create_app() -> FastAPI:
                         result = asyncio.run(result)
                     return result if result else "Task completed successfully"
             finally:
-                manager.release_device(device_id)
+                manager.release_device(device_key)
+
 
         scheduled_task_manager.set_task_executor(execute_scheduled_task)
 
@@ -169,24 +176,29 @@ def create_app() -> FastAPI:
             from AutoGLM_GUI.config_manager import config_manager
             from AutoGLM_GUI.logger import logger
             from AutoGLM_GUI.model_limiter import execution_limiter
+            from AutoGLM_GUI.device_manager import DeviceManager
 
             # 从全局配置获取最大步数
             effective_config = config_manager.get_effective_config()
             max_steps = effective_config.default_max_steps
             logger.info(f"Executing douyin comment task {task_uuid}: device={device_id}, max_steps={max_steps}")
+            device_manager = DeviceManager.get_instance()
+            device_key, actual_device_id = device_manager.resolve_device_ids(device_id)
 
             manager = PhoneAgentManager.get_instance()
 
             # 尝试获取设备锁，等待最多 5 秒
             acquired = manager.acquire_device(
-                device_id,
+                device_key,
                 timeout=5,  # 等待 5 秒
                 raise_on_timeout=False,
                 auto_initialize=True,
             )
 
             if not acquired:
-                raise RuntimeError(f"Device {device_id} is busy (可能正在被聊天界面使用，请先关闭聊天或等待完成)")
+                raise RuntimeError(
+                    f"Device {device_id} is busy (可能正在被聊天界面使用，请先关闭聊天或等待完成)"
+                )
 
             try:
                 # 检查任务是否已被中止
@@ -195,7 +207,7 @@ def create_app() -> FastAPI:
                     return "Task aborted"
                 
                 agent = manager.get_agent_with_context(
-                    device_id, context="douyin-comment-task", agent_type="glm"
+                    device_key, context="douyin-comment-task", agent_type="glm"
                 )
 
                 agent.agent_config.max_steps = max_steps
@@ -213,7 +225,7 @@ def create_app() -> FastAPI:
                 
                 return result if result else "Task completed successfully"
             finally:
-                manager.release_device(device_id)
+                manager.release_device(device_key)
 
         douyin_comment_task_manager.set_task_executor(execute_douyin_comment_task)
         douyin_comment_task_manager.start_scheduler()

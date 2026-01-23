@@ -5,6 +5,7 @@ import {
   Server,
   Smartphone,
   Trash2,
+  Unlock,
   Wifi,
   WifiOff,
 } from 'lucide-react';
@@ -27,7 +28,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ConfirmDialog } from './ConfirmDialog';
 import { useTranslation } from '../lib/i18n-context';
-import { removeRemoteDevice, updateDeviceName } from '../api';
+import {
+  forceReleaseDevice,
+  removeRemoteDevice,
+  updateDeviceName,
+} from '../api';
 import type { AgentStatus } from '../api';
 import type { ToastType } from './Toast';
 
@@ -44,6 +49,7 @@ interface DeviceCardProps {
   onConnectWifi?: () => Promise<void>;
   onDisconnectWifi?: () => Promise<void>;
   onNameUpdated?: () => void;
+  onForceRelease?: () => void;
   showToast?: (message: string, type: ToastType) => void;
 }
 
@@ -60,6 +66,7 @@ export function DeviceCard({
   onConnectWifi,
   onDisconnectWifi,
   onNameUpdated,
+  onForceRelease,
   showToast,
 }: DeviceCardProps) {
   const t = useTranslation();
@@ -73,6 +80,7 @@ export function DeviceCard({
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [editingName, setEditingName] = useState('');
   const [saving, setSaving] = useState(false);
+  const [releasing, setReleasing] = useState(false);
 
   const actualDisplayName = displayName || model || t.deviceCard.unknownDevice;
 
@@ -180,6 +188,35 @@ export function DeviceCard({
       }
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleForceRelease = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (releasing) return;
+
+    setReleasing(true);
+    try {
+      const response = await forceReleaseDevice(serial);
+      if (response.success) {
+        if (showToast) {
+          showToast(response.message, 'success');
+        }
+        if (onForceRelease) {
+          onForceRelease();
+        }
+      } else {
+        if (showToast) {
+          showToast(response.message, 'error');
+        }
+      }
+    } catch (error) {
+      console.error('Failed to force release device:', error);
+      if (showToast) {
+        showToast(t.deviceCard.forceReleaseError || '强制释放失败', 'error');
+      }
+    } finally {
+      setReleasing(false);
     }
   };
 
@@ -391,6 +428,29 @@ export function DeviceCard({
                   <Trash2 className="w-3.5 h-3.5" />
                 )}
               </Button>
+            )}
+            {/* Force release button when device is busy */}
+            {agent?.state === 'busy' && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleForceRelease}
+                    disabled={releasing}
+                    className="h-7 w-7 text-amber-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/20"
+                  >
+                    {releasing ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Unlock className="w-3.5 h-3.5" />
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>{t.deviceCard.forceRelease || '强制释放设备锁'}</p>
+                </TooltipContent>
+              </Tooltip>
             )}
           </div>
         </div>

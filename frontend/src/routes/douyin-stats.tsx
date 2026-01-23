@@ -2,11 +2,19 @@ import { createFileRoute } from '@tanstack/react-router';
 import { useState, useEffect } from 'react';
 import {
   getDouyinReplyList,
+  listDouyinCommentTasks,
   type DouyinReplyRecord,
+  type DouyinCommentTask,
   getErrorMessage,
 } from '../api';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+} from '@/components/ui/select';
 import {
   Loader2,
   MessageCircle,
@@ -29,6 +37,21 @@ function DouyinStatsComponent() {
     new Date().toISOString().split('T')[0]
   );
   const [records, setRecords] = useState<DouyinReplyRecord[]>([]);
+  const [tasks, setTasks] = useState<DouyinCommentTask[]>([]);
+  const [selectedTaskUuid, setSelectedTaskUuid] = useState<string>('all');
+
+  // 加载任务列表
+  useEffect(() => {
+    const loadTasks = async () => {
+      try {
+        const data = await listDouyinCommentTasks();
+        setTasks(data.tasks);
+      } catch (error) {
+        console.error('Failed to load tasks:', error);
+      }
+    };
+    loadTasks();
+  }, []);
 
   const loadStats = async () => {
     try {
@@ -37,7 +60,9 @@ function DouyinStatsComponent() {
       const selected = new Date(selectedDate);
       const diffTime = today.getTime() - selected.getTime();
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-      const listData = await getDouyinReplyList(undefined, diffDays, 500, 0);
+      const taskUuid =
+        selectedTaskUuid === 'all' ? undefined : selectedTaskUuid;
+      const listData = await getDouyinReplyList(taskUuid, diffDays, 500, 0);
       const filteredRecords = listData.records.filter(r =>
         r.replied_at.startsWith(selectedDate)
       );
@@ -56,7 +81,7 @@ function DouyinStatsComponent() {
   useEffect(() => {
     loadStats();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDate]);
+  }, [selectedDate, selectedTaskUuid]);
 
   const changeDate = (delta: number) => {
     const date = new Date(selectedDate);
@@ -66,11 +91,37 @@ function DouyinStatsComponent() {
 
   const isToday = selectedDate === new Date().toISOString().split('T')[0];
 
+  // 获取任务名称
+  const getTaskName = (taskUuid: string) => {
+    const task = tasks.find(t => t.uuid === taskUuid);
+    return task?.name || taskUuid.slice(0, 8);
+  };
+
   return (
     <div className="h-full flex flex-col p-4 overflow-hidden">
-      {/* 顶部：日期选择 */}
+      {/* 顶部：任务选择 + 日期选择 */}
       <div className="flex justify-between items-center mb-4 shrink-0">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
+          {/* 任务筛选 */}
+          <Select value={selectedTaskUuid} onValueChange={setSelectedTaskUuid}>
+            <SelectTrigger className="w-[160px]">
+              <span className="truncate">
+                {selectedTaskUuid === 'all'
+                  ? '全部任务'
+                  : getTaskName(selectedTaskUuid)}
+              </span>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部任务</SelectItem>
+              {tasks.map(task => (
+                <SelectItem key={task.uuid} value={task.uuid}>
+                  {task.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* 日期选择 */}
           <Button variant="outline" size="sm" onClick={() => changeDate(-1)}>
             <ChevronLeft className="w-4 h-4" />
           </Button>
@@ -138,9 +189,28 @@ function DouyinStatsComponent() {
               {records.map(record => (
                 <div
                   key={record.id}
-                  className="p-2 bg-slate-50 rounded text-sm"
+                  className="p-3 bg-slate-50 dark:bg-slate-800 rounded text-sm space-y-1"
                 >
-                  {record.reply_content || '-'}
+                  <div className="flex items-center justify-between text-xs text-slate-500">
+                    <span>
+                      {selectedTaskUuid === 'all' && (
+                        <span className="text-blue-600 dark:text-blue-400 mr-2">
+                          [{getTaskName(record.task_uuid)}]
+                        </span>
+                      )}
+                      @{record.video_author}
+                      {record.replied_user && ` → ${record.replied_user}`}
+                    </span>
+                    <span>{record.replied_at.split('T')[1]?.slice(0, 5)}</span>
+                  </div>
+                  <div className="text-slate-900 dark:text-slate-100">
+                    {record.reply_content || '-'}
+                  </div>
+                  {record.original_comment && (
+                    <div className="text-xs text-slate-400 border-l-2 border-slate-300 pl-2">
+                      {record.original_comment}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

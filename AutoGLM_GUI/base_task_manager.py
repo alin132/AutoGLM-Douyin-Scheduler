@@ -394,7 +394,9 @@ class BaseTaskManager(ABC):
 
             self._schedule_task(uuid, loop, current_task)
 
-    async def _execute_task_and_reschedule(self, task: dict) -> None:
+    async def _execute_task_and_reschedule(
+        self, task: dict, reschedule: bool = True
+    ) -> None:
         """执行任务并在完成后重新调度下一次.
 
         如果配置了 _task_timeout_seconds，超时后会以 FAILED 状态记录，
@@ -402,6 +404,7 @@ class BaseTaskManager(ABC):
         """
         uuid = task["uuid"]
         timed_out = False
+        task_handle: asyncio.Task | None = None
 
         try:
             if self._task_timeout_seconds > 0:
@@ -443,22 +446,29 @@ class BaseTaskManager(ABC):
                     pass
             raise
         finally:
-            # 任务完成后，重新注册下一次调度
-            current_task = self.get_task(uuid)
-            if (
-                current_task
-                and current_task["status"] == TaskStatus.ENABLED.value
-                and current_task.get("cron_expression")
-            ):
-                self._register_job(current_task)
-                logger.info(
-                    f"Rescheduled {self._manager_name} job {uuid} after completion"
-                    + (" (timed out)" if timed_out else "")
-                )
+            if reschedule:
+                # 任务完成后，重新注册下一次调度
+                current_task = self.get_task(uuid)
+                if (
+                    current_task
+                    and current_task["status"] == TaskStatus.ENABLED.value
+                    and current_task.get("cron_expression")
+                ):
+                    self._register_job(current_task)
+                    logger.info(
+                        f"Rescheduled {self._manager_name} job {uuid} after completion"
+                        + (" (timed out)" if timed_out else "")
+                    )
 
-    def _schedule_task(self, task_uuid: str, loop: asyncio.AbstractEventLoop, task: dict) -> None:
+    def _schedule_task(
+        self,
+        task_uuid: str,
+        loop: asyncio.AbstractEventLoop,
+        task: dict,
+        reschedule: bool = True,
+    ) -> None:
         """在事件循环中调度任务."""
-        handle = loop.create_task(self._execute_task_and_reschedule(task))
+        handle = loop.create_task(self._execute_task_and_reschedule(task, reschedule))
         self._running_task_handles[task_uuid] = handle
 
         def _cleanup(_: asyncio.Task) -> None:

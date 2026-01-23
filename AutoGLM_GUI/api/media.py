@@ -46,9 +46,10 @@ def take_screenshot(request: ScreenshotRequest) -> ScreenshotResponse:
             )
 
         device_manager = DeviceManager.get_instance()
-        serial = device_manager.get_serial_by_device_id(device_id)
+        serial, actual_device_id = device_manager.resolve_device_ids(device_id)
 
-        if not serial:
+        managed = device_manager.get_device_by_device_id(serial)
+        if not managed:
             return ScreenshotResponse(
                 success=False,
                 image="",
@@ -58,31 +59,29 @@ def take_screenshot(request: ScreenshotRequest) -> ScreenshotResponse:
                 error=f"Device {device_id} not found",
             )
 
-        if serial:
-            managed = device_manager.get_device_by_device_id(serial)
-            if managed and managed.connection_type.value == "remote":
-                remote_device = device_manager.get_remote_device_instance(serial)
+        if managed.connection_type.value == "remote":
+            remote_device = device_manager.get_remote_device_instance(serial)
 
-                if not remote_device:
-                    return ScreenshotResponse(
-                        success=False,
-                        image="",
-                        width=0,
-                        height=0,
-                        is_sensitive=False,
-                        error=f"Remote device {serial} not found",
-                    )
-
-                screenshot = remote_device.get_screenshot(timeout=10)  # type: ignore
+            if not remote_device:
                 return ScreenshotResponse(
-                    success=True,
-                    image=screenshot.base64_data,
-                    width=screenshot.width,
-                    height=screenshot.height,
-                    is_sensitive=screenshot.is_sensitive,
+                    success=False,
+                    image="",
+                    width=0,
+                    height=0,
+                    is_sensitive=False,
+                    error=f"Remote device {serial} not found",
                 )
 
-        screenshot = capture_screenshot(device_id=device_id)
+            screenshot = remote_device.get_screenshot(timeout=10)  # type: ignore
+            return ScreenshotResponse(
+                success=True,
+                image=screenshot.base64_data,
+                width=screenshot.width,
+                height=screenshot.height,
+                is_sensitive=screenshot.is_sensitive,
+            )
+
+        screenshot = capture_screenshot(device_id=actual_device_id)
         return ScreenshotResponse(
             success=True,
             image=screenshot.base64_data,

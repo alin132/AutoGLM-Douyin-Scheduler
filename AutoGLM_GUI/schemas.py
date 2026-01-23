@@ -534,6 +534,7 @@ class MdnsDeviceResponse(BaseModel):
     has_pairing: bool  # Whether pairing service was also advertised
     service_type: str  # Service type
     pairing_port: int | None = None  # Pairing port if has_pairing is True
+    serial: str | None = None  # 从 name 中提取的硬件序列号
 
 
 class MdnsDiscoverResponse(BaseModel):
@@ -915,3 +916,52 @@ class DeviceNameResponse(BaseModel):
     serial: str
     display_name: str | None = None
     error: str | None = None
+
+
+# Connection History Models
+
+
+class ConnectionHistoryItem(BaseModel):
+    """连接历史记录."""
+
+    ip: str
+    port: int
+    serial: str | None = None
+    model: str | None = None
+    display_name: str | None = None
+    last_connected: str
+    connection_count: int
+
+
+class ConnectionHistoryListResponse(BaseModel):
+    """连接历史列表响应."""
+
+    success: bool
+    history: list[ConnectionHistoryItem]
+
+
+class ConnectionHistoryRemoveRequest(BaseModel):
+    """删除连接历史请求."""
+
+    ip: str
+
+
+class ConnectionHistoryRemoveResponse(BaseModel):
+    """删除连接历史响应."""
+
+    success: bool
+    message: str
+
+
+class ConnectionHistoryUpdateNameRequest(BaseModel):
+    """更新连接历史名称请求."""
+
+    ip: str
+    display_name: str | None
+
+
+class ConnectionHistoryUpdateNameResponse(BaseModel):
+    """更新连接历史名称响应."""
+
+    success: bool
+    message: str
